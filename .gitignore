@@ -17,6 +17,7 @@ dist-ssr/
 .env*.local
 
 # Editor & OS files
+scratch/
 .vscode/*
 !.vscode/extensions.json
 .idea/

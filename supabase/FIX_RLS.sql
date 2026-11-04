@@ -189,23 +189,18 @@ GRANT EXECUTE ON FUNCTION public.lookup_employee_attendance(TEXT, INT, INT) TO a
 
 -- 6. Khởi tạo bảng employee_leave_balances (Danh Mục Quản Lý & Tra Cứu Phép Tồn)
 CREATE TABLE IF NOT EXISTS public.employee_leave_balances (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id SERIAL PRIMARY KEY,
     employee_code VARCHAR(50) NOT NULL,
     employee_name VARCHAR(150),
     department VARCHAR(100),
     leave_balance_2025 NUMERIC(6, 2) DEFAULT 0,
     leave_generated_2026 NUMERIC(6, 2) DEFAULT 0,
     remaining_days NUMERIC(6, 2) DEFAULT 0,
-    month INT,
-    year INT NOT NULL DEFAULT 2026,
-    import_batch_id TEXT,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_elb_emp_code ON public.employee_leave_balances (employee_code);
-CREATE INDEX IF NOT EXISTS idx_elb_period ON public.employee_leave_balances (year, month);
-CREATE INDEX IF NOT EXISTS idx_elb_emp_period ON public.employee_leave_balances (employee_code, year, month);
 
 ALTER TABLE public.employee_leave_balances ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public on employee_leave_balances" ON public.employee_leave_balances;
