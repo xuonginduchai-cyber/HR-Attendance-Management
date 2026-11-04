@@ -4,10 +4,11 @@
 -- Chạy script này trong mục SQL Editor của Supabase Dashboard (supabase.com/dashboard)
 -- ==============================================================================
 
--- 1. Bổ sung các cột mở rộng cho bảng attendance_daily (nếu chưa có)
+-- 1. Bổ sung các cột mở rộng cho bảng attendance_daily và employees (nếu chưa có)
 ALTER TABLE public.attendance_daily ADD COLUMN IF NOT EXISTS overtime_hours NUMERIC(4, 2) DEFAULT 0;
 ALTER TABLE public.attendance_daily ADD COLUMN IF NOT EXISTS leave_code VARCHAR(50);
 ALTER TABLE public.attendance_daily ADD COLUMN IF NOT EXISTS overtime_details JSONB;
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS salary_pin VARCHAR(20) DEFAULT '1234';
 
 -- 2. Khởi tạo bảng leave_balances (Số Dư Phép Năm) nếu chưa có
 CREATE TABLE IF NOT EXISTS public.leave_balances (

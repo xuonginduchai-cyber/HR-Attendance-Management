@@ -978,36 +978,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch {}
 
-    // 6. Dọn dẹp nhân viên mồ côi (chỉ được tạo khi nạp file của kỳ này, không còn công ở bất kỳ kỳ nào khác)
-    const orphanEmpIds: string[] = [];
-    affectedEmpIds.forEach((empId) => {
-      const hasOtherAtt = remainingAttendance.some(
-        (r) => r.employeeId.trim().toUpperCase() === empId
-      );
-      const hasOtherMat = Object.values(remainingMatrices).some(
-        (m) => m.employeeId.trim().toUpperCase() === empId
-      );
-      if (!hasOtherAtt && !hasOtherMat) {
-        orphanEmpIds.push(empId);
-      }
-    });
-
-    if (orphanEmpIds.length > 0) {
-      setEmployees((prev) => {
-        const updated = prev.filter((e) => !orphanEmpIds.includes(e.id.trim().toUpperCase()));
-        saveToStorage('hr_employees', updated);
-        return updated;
-      });
-      if (isSupabaseConfigured) {
-        try {
-          await employeeService.deleteEmployees(orphanEmpIds);
-        } catch (err) {
-          console.warn('Lỗi dọn dẹp nhân viên mồ côi trên Supabase:', err);
-        }
-      }
-    }
-
-    // 7. Đồng bộ Supabase (xóa attendance_daily, attendance_summaries, attendance_months)
+    // 6. Đồng bộ Supabase (xóa attendance_daily, attendance_summaries, attendance_months)
+    // Lưu ý: Tuyệt đối không xóa hồ sơ nhân viên trong bảng employees khi xóa kỳ chấm công
     if (isSupabaseConfigured) {
       try {
         await attendanceService.deleteAttendanceByPeriod(numMonth, numYear);
@@ -1079,36 +1051,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch {}
 
-    // 6. Dọn dẹp nhân viên mồ côi không còn công ở bất kỳ năm nào khác
-    const orphanEmpIds: string[] = [];
-    affectedEmpIds.forEach((empId) => {
-      const hasOtherAtt = remainingAttendance.some(
-        (r) => r.employeeId.trim().toUpperCase() === empId
-      );
-      const hasOtherMat = Object.values(remainingMatrices).some(
-        (m) => m.employeeId.trim().toUpperCase() === empId
-      );
-      if (!hasOtherAtt && !hasOtherMat) {
-        orphanEmpIds.push(empId);
-      }
-    });
-
-    if (orphanEmpIds.length > 0) {
-      setEmployees((prev) => {
-        const updated = prev.filter((e) => !orphanEmpIds.includes(e.id.trim().toUpperCase()));
-        saveToStorage('hr_employees', updated);
-        return updated;
-      });
-      if (isSupabaseConfigured) {
-        try {
-          await employeeService.deleteEmployees(orphanEmpIds);
-        } catch (err) {
-          console.warn('Lỗi dọn dẹp nhân viên mồ côi cả năm trên Supabase:', err);
-        }
-      }
-    }
-
-    // 7. Đồng bộ Supabase (xóa attendance_daily, attendance_summaries, attendance_months)
+    // 6. Đồng bộ Supabase (xóa attendance_daily, attendance_summaries, attendance_months)
+    // Lưu ý: Tuyệt đối không xóa hồ sơ nhân viên trong bảng employees khi xóa kỳ chấm công
     if (isSupabaseConfigured) {
       try {
         await attendanceService.deleteAttendanceByYear(numYear);
@@ -1454,19 +1398,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }).catch(() => {});
       } catch (err: any) {
-        console.warn('Lỗi ghi Supabase (dữ liệu đã được lưu trữ an toàn trong state):', err);
+        console.error('Lỗi ghi Supabase:', err);
         const isRlsError =
           err?.message?.includes('row-level security') ||
           err?.code === '42501' ||
           err?.message?.includes('violates');
         res = {
-          success: true,
+          success: false,
           message: isRlsError
-            ? `Đã lưu ${params.validRows.length} bản ghi vào bộ nhớ. LƯU Ý: Supabase RLS đang chặn quyền ghi của Anon Key (Lỗi 42501). Quý Admin hãy mở Supabase SQL Editor và chạy file 'supabase/FIX_RLS.sql' để dữ liệu lưu vĩnh viễn trên Cloud và tra cứu được ở trình duyệt ẩn danh!`
-            : `Đã nạp ${params.validRows.length} bản ghi vào hệ thống (Lỗi Supabase: ${err?.message}).`,
+            ? `Lỗi bảo mật Supabase RLS (42501) hoặc vi phạm ràng buộc dữ liệu: ${err?.message}. Quý Admin hãy mở Supabase SQL Editor và chạy file 'supabase/FIX_RLS.sql' để cấp quyền ghi cho Anon Key!`
+            : `Không thể đồng bộ dữ liệu vào cơ sở dữ liệu Supabase: ${err?.message || 'Lỗi không xác định'}. Dữ liệu chưa được lưu vĩnh viễn trên Cloud.`,
           totalRows: params.totalRows,
-          successRows: params.validRows.length,
-          errorRows: params.errorRowsCount,
+          successRows: 0,
+          errorRows: params.errorRowsCount + params.validRows.length,
           reportSummary: buildFallbackReportSummary(),
         };
       }

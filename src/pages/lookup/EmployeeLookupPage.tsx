@@ -65,6 +65,8 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
     getEmployeeLeaveBalance,
     getAttendanceMatrix,
     getAvailablePeriodsForEmployee,
+    importedMatrices,
+    attendanceRecords,
     leaveRequests,
     verifyEmployeeSalaryPin,
   } = useData();
@@ -154,6 +156,41 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
     };
   }, []);
 
+  // Tự động nhận diện kỳ có dữ liệu từ importedMatrices hoặc attendanceRecords (cho trình duyệt ẩn danh / máy mới)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('hr_last_imported_period');
+      if (saved) return;
+    } catch {}
+
+    const matList = Object.values(importedMatrices);
+    if (matList.length > 0) {
+      const first = matList[0];
+      if (first.month && first.year) {
+        setSelectedMonth(Number(first.month));
+        setSelectedYear(Number(first.year));
+        return;
+      }
+    }
+
+    if (attendanceRecords.length > 0) {
+      for (const r of attendanceRecords) {
+        if (r.date) {
+          const parts = r.date.split('-');
+          if (parts.length >= 2) {
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (m && y) {
+              setSelectedMonth(m);
+              setSelectedYear(y);
+              return;
+            }
+          }
+        }
+      }
+    }
+  }, [importedMatrices, attendanceRecords]);
+
   // Countdown timer cho lockout mã PIN
   useEffect(() => {
     if (pinLockoutSeconds > 0 && !pinTimerRef.current) {
@@ -214,31 +251,6 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
       try {
         const res = await lookupService.lookupEmployee(trimmed, targetMonth, targetYear);
         if (res.success && res.employee) {
-          const rpcMat = res.calculatedSummary?.matrix;
-          const rpcHasAttendance = Boolean(
-            (res.attendanceDaily && res.attendanceDaily.some((r) => r.date.startsWith(`${targetYear}-${String(targetMonth).padStart(2, '0')}`) && ((Number(r.workHours) || 0) > 0 || r.checkIn || (r.status && r.status !== 'weekend')))) ||
-            (rpcMat && isMatrixValidWithData(rpcMat) && Number(rpcMat.month) === Number(targetMonth) && Number(rpcMat.year) === Number(targetYear)) ||
-            (res.calculatedSummary && ((Number(res.calculatedSummary.totalWorkHours) || 0) > 0 || (Number(res.calculatedSummary.actualWorkDays) || 0) > 0))
-          );
-
-          // Kiểm tra thêm cục bộ xem có công kỳ này không
-          const localMat = getAttendanceMatrix(trimmed, targetMonth, targetYear);
-          const localRec = getAttendanceByEmployee(trimmed, targetMonth, targetYear);
-          const localHas = Boolean(
-            (isMatrixValidWithData(localMat) && Number(localMat!.month) === Number(targetMonth) && Number(localMat!.year) === Number(targetYear)) ||
-            (localRec && localRec.some((r) => (Number(r.workHours) || 0) > 0 || r.checkIn || (r.status && r.status !== 'weekend')))
-          );
-
-          if (targetCategory === 'attendance' && !rpcHasAttendance && !localHas) {
-            setRpcResult(null);
-            setSearchedEmployeeId(trimmed);
-            setHasSearched(true);
-            setSearchError(`Không có dữ liệu trong danh mục quản lý công cho mã nhân viên "${trimmed}" (Kỳ Tháng ${targetMonth}/${targetYear}).`);
-            setIsSearching(false);
-            lookupSecurity.recordAttempt(true);
-            return;
-          }
-
           setRpcResult(res);
           setSearchedEmployeeId(trimmed);
           setHasSearched(true);
@@ -256,24 +268,6 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
     // 2. Tra cứu cục bộ (Hỗ trợ 100% nhân viên trong bộ nhớ và ma trận nạp từ Excel)
     const localEmp = getEmployeeById(trimmed);
     if (localEmp) {
-      // KIỂM TRA ĐÚNG DANH MỤC QUẢN LÝ CÔNG KỲ NÀY
-      const localMat = getAttendanceMatrix(trimmed, targetMonth, targetYear);
-      const localRec = getAttendanceByEmployee(trimmed, targetMonth, targetYear);
-      const hasLocalAttendance = Boolean(
-        (isMatrixValidWithData(localMat) && Number(localMat!.month) === Number(targetMonth) && Number(localMat!.year) === Number(targetYear)) ||
-        (localRec && localRec.some((r) => (Number(r.workHours) || 0) > 0 || r.checkIn || (r.status && r.status !== 'weekend')))
-      );
-
-      if (targetCategory === 'attendance' && !hasLocalAttendance) {
-        setRpcResult(null);
-        setSearchedEmployeeId(trimmed);
-        setHasSearched(true);
-        setSearchError(`Không có dữ liệu trong danh mục quản lý công cho mã nhân viên "${trimmed}" (Kỳ Tháng ${targetMonth}/${targetYear}).`);
-        setIsSearching(false);
-        lookupSecurity.recordAttempt(true);
-        return;
-      }
-
       lookupSecurity.recordAttempt(true);
       setRpcResult(null);
       setSearchedEmployeeId(trimmed);

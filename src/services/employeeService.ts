@@ -65,7 +65,6 @@ export const employeeService = {
         bank_name: emp.bankAccount?.bankName || null,
         bank_account_number: emp.bankAccount?.accountNumber || null,
         bank_branch: emp.bankAccount?.branch || null,
-        salary_pin: '1234',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -135,29 +134,34 @@ export const employeeService = {
 
     const cleanIds = ids.map((id) => id.trim().toUpperCase());
 
-    // 1. Dọn dẹp tường minh các bảng liên quan để tránh lỗi khóa ngoại nếu cascade chưa bật trên DB
-    try {
-      await supabase.from('attendance_daily').delete().in('employee_id', cleanIds);
-    } catch (e) {
-      console.warn('Lỗi dọn dẹp attendance_daily khi xóa NV:', e);
-    }
-    try {
-      await supabase.from('attendance_summaries').delete().in('employee_id', cleanIds);
-    } catch (e) {
-      console.warn('Lỗi dọn dẹp attendance_summaries khi xóa NV:', e);
-    }
-    try {
-      await supabase.from('leave_balances').delete().in('employee_id', cleanIds);
-    } catch (e) {
-      console.warn('Lỗi dọn dẹp leave_balances khi xóa NV:', e);
-    }
+    // Chia thành các lô 100 ID để tránh tràn query param HTTP GET/DELETE
+    for (let i = 0; i < cleanIds.length; i += 100) {
+      const slice = cleanIds.slice(i, i + 100);
 
-    // 2. Xóa hồ sơ nhân viên trong bảng employees
-    const { error } = await supabase.from('employees').delete().in('id', cleanIds);
+      // 1. Dọn dẹp tường minh các bảng liên quan để tránh lỗi khóa ngoại nếu cascade chưa bật trên DB
+      try {
+        await supabase.from('attendance_daily').delete().in('employee_id', slice);
+      } catch (e) {
+        console.warn('Lỗi dọn dẹp attendance_daily khi xóa NV:', e);
+      }
+      try {
+        await supabase.from('attendance_summaries').delete().in('employee_id', slice);
+      } catch (e) {
+        console.warn('Lỗi dọn dẹp attendance_summaries khi xóa NV:', e);
+      }
+      try {
+        await supabase.from('leave_balances').delete().in('employee_id', slice);
+      } catch (e) {
+        console.warn('Lỗi dọn dẹp leave_balances khi xóa NV:', e);
+      }
 
-    if (error) {
-      console.error('Lỗi xóa danh sách nhân viên trong Supabase:', error);
-      throw error;
+      // 2. Xóa hồ sơ nhân viên trong bảng employees
+      const { error } = await supabase.from('employees').delete().in('id', slice);
+
+      if (error) {
+        console.error('Lỗi xóa danh sách nhân viên trong Supabase:', error);
+        throw error;
+      }
     }
   },
 
@@ -231,17 +235,21 @@ export const employeeService = {
     try {
       const allIds = uniqueEmps.map((e) => e.id);
 
-      // 1. Kiểm tra danh sách nhân viên đã có sẵn trên Supabase
-      const { data: dbEmps, error: checkErr } = await supabase
-        .from('employees')
-        .select('id')
-        .in('id', allIds);
+      // 1. Kiểm tra danh sách nhân viên đã có sẵn trên Supabase (chia lô 100 ID tránh tràn URL)
+      const existingIdSet = new Set<string>();
+      for (let i = 0; i < allIds.length; i += 100) {
+        const slice = allIds.slice(i, i + 100);
+        const { data: dbEmps, error: checkErr } = await supabase
+          .from('employees')
+          .select('id')
+          .in('id', slice);
 
-      if (checkErr) {
-        console.warn('Lỗi kiểm tra nhân viên tồn tại trên Supabase:', checkErr);
+        if (checkErr) {
+          console.warn('Lỗi kiểm tra nhân viên tồn tại trên Supabase:', checkErr);
+        }
+        (dbEmps || []).forEach((e: any) => existingIdSet.add(e.id.trim().toUpperCase()));
       }
 
-      const existingIdSet = new Set((dbEmps || []).map((e: any) => e.id.trim().toUpperCase()));
       const toInsert = uniqueEmps.filter((e) => !existingIdSet.has(e.id));
 
       uniqueEmps.forEach((e) => {
@@ -297,7 +305,6 @@ export const employeeService = {
             status: 'active',
             base_salary: 12000000,
             allowance: 1500000,
-            salary_pin: '1234',
             created_at: nowIso,
             updated_at: nowIso,
           };
@@ -318,6 +325,7 @@ export const employeeService = {
               .upsert(singleEmp, { onConflict: 'id' });
             if (singleErr) {
               console.error(`Không thể tạo nhân viên ${singleEmp.id}:`, singleErr);
+              errors.push(`Không thể tạo nhân viên ${singleEmp.id}: ${singleErr.message}`);
             } else {
               created.push(singleEmp.id);
             }
@@ -396,7 +404,6 @@ export const employeeService = {
             status: 'active',
             base_salary: 12000000,
             allowance: 1500000,
-            salary_pin: '1234',
             created_at: nowIso,
             updated_at: nowIso,
           };

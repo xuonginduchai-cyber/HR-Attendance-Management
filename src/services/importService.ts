@@ -219,6 +219,9 @@ export const importService = {
     }
 
     // 3. XỬ LÝ LƯU DỮ LIỆU CHẤM CÔNG VÀO SUPABASE
+    let successfullySavedDailyCount = 0;
+    const dailyErrors: string[] = [];
+
     if (isSupabaseConfigured) {
       try {
         const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
@@ -321,7 +324,6 @@ export const importService = {
         const dailyRecords = Array.from(deduplicatedDailyMap.values());
 
         // Ghi dữ liệu chấm công theo các lô lớn (500 bản ghi) chạy song song (concurrency: 3)
-        // Giảm thời gian nạp từ 30-60 giây xuống còn 1.5 - 2 giây, triệt tiêu nguy cơ thiếu dữ liệu
         const CHUNK_SIZE = 500;
         const chunks: (typeof dailyRecords)[] = [];
         for (let i = 0; i < dailyRecords.length; i += CHUNK_SIZE) {
@@ -338,12 +340,13 @@ export const importService = {
                 .from('attendance_daily')
                 .upsert(chunk, { onConflict: 'employee_id,date' });
 
-              if (upsertErr) {
+              if (!upsertErr) {
+                successfullySavedDailyCount += chunk.length;
+              } else {
                 console.warn(
-                  `Lô #${currentChunkNum} (${chunk.length} dòng) gặp lỗi mạng hoặc RLS, kích hoạt chia nhỏ nhị phân (100 dòng/lô):`,
+                  `Lô #${currentChunkNum} (${chunk.length} dòng) gặp lỗi mạng hoặc RLS, kích hoạt chia nhỏ (100 dòng/lô):`,
                   upsertErr
                 );
-                // Chia nhỏ thành các lô 100 dòng để lưu an toàn tuyệt đối, không làm mất một bản ghi nào
                 const SUB_CHUNK_SIZE = 100;
                 for (let s = 0; s < chunk.length; s += SUB_CHUNK_SIZE) {
                   const subChunk = chunk.slice(s, s + SUB_CHUNK_SIZE);
@@ -351,14 +354,18 @@ export const importService = {
                     .from('attendance_daily')
                     .upsert(subChunk, { onConflict: 'employee_id,date' });
 
-                  if (subErr) {
-                    // Nếu lô nhỏ vẫn lỗi, lưu từng bản ghi dự phòng cuối cùng
+                  if (!subErr) {
+                    successfullySavedDailyCount += subChunk.length;
+                  } else {
                     for (const singleRec of subChunk) {
-                      try {
-                        await supabase
-                          .from('attendance_daily')
-                          .upsert(singleRec, { onConflict: 'employee_id,date' });
-                      } catch {}
+                      const { error: singleErr } = await supabase
+                        .from('attendance_daily')
+                        .upsert(singleRec, { onConflict: 'employee_id,date' });
+                      if (!singleErr) {
+                        successfullySavedDailyCount += 1;
+                      } else {
+                        dailyErrors.push(`${singleRec.employee_id} (${singleRec.date}): ${singleErr.message}`);
+                      }
                     }
                   }
                 }
@@ -367,9 +374,15 @@ export const importService = {
           );
         }
 
+        if (dailyRecords.length > 0 && successfullySavedDailyCount === 0) {
+          throw new Error(
+            `Không thể lưu dữ liệu chấm công vào Supabase: ${dailyErrors[0] || 'Lỗi kết nối hoặc vi phạm ràng buộc dữ liệu'}`
+          );
+        }
+
         // Cập nhật kỳ chấm công attendance_months
         try {
-          await supabase
+          const { error: monthErr } = await supabase
             .from('attendance_months')
             .upsert(
               {
@@ -380,6 +393,9 @@ export const importService = {
               },
               { onConflict: 'month,year' }
             );
+          if (monthErr) {
+            console.warn('Lỗi cập nhật attendance_months:', monthErr);
+          }
         } catch {}
 
         // Tự động tính toán và cập nhật attendance_summaries trực tiếp từ bộ nhớ (không cần query lại qua mạng)
@@ -434,9 +450,12 @@ export const importService = {
           for (let s = 0; s < summariesToUpsert.length; s += 200) {
             const sumChunk = summariesToUpsert.slice(s, s + 200);
             try {
-              await supabase
+              const { error: sumErr } = await supabase
                 .from('attendance_summaries')
                 .upsert(sumChunk, { onConflict: 'employee_id,month,year' });
+              if (sumErr) {
+                console.warn('Lỗi ghi summaries vào Supabase:', sumErr);
+              }
             } catch {}
           }
         } catch (sumErr) {
@@ -465,19 +484,22 @@ export const importService = {
     };
 
     // 5. GHI NHẬT KÝ VÀO ATTENDANCE_IMPORTS VÀ AUDIT_LOGS
+    const totalPersistedCount = isSupabaseConfigured ? successfullySavedDailyCount : validRows.length;
+    const allErrorsList = [
+      ...errorDetails,
+      ...syncErrors.map((err) => ({ row: 0, error: err })),
+      ...dailyErrors.map((err) => ({ row: 0, error: err })),
+    ];
     let savedLogId: string | undefined = undefined;
     try {
       const savedLog = await this.recordImportLog({
         fileName: file ? file.name : `Import_Thang_${month}_${year}.xlsx`,
         importedBy: importedByName,
         totalRows,
-        successRows: validRows.length,
-        errorRows: errorRowsCount,
-        status: errorRowsCount === 0 ? 'success' : validRows.length > 0 ? 'partial' : 'failed',
-        errors: [
-          ...errorDetails,
-          ...syncErrors.map((err) => ({ row: 0, error: err })),
-        ],
+        successRows: totalPersistedCount,
+        errorRows: errorRowsCount + dailyErrors.length,
+        status: allErrorsList.length === 0 ? 'success' : totalPersistedCount > 0 ? 'partial' : 'failed',
+        errors: allErrorsList,
         filePath: storageFilePath || undefined,
         fileSize: file ? file.size : undefined,
       });
@@ -493,8 +515,8 @@ export const importService = {
           details: {
             fileName: file?.name,
             totalRows,
-            successRows: validRows.length,
-            errorRows: errorRowsCount,
+            successRows: totalPersistedCount,
+            errorRows: errorRowsCount + dailyErrors.length,
             mode,
             newEmployeesCount: syncCreatedIds.length,
             updatedEmployeesCount: syncUpdatedIds.length,
@@ -508,10 +530,10 @@ export const importService = {
 
     return {
       success: true,
-      message: `Đã xử lý ${totalRecognized} nhân viên (${syncCreatedIds.length} nhân viên mới được tạo, ${syncUpdatedIds.length} nhân viên cập nhật) và lưu thành công ${validRows.length} bản ghi chấm công!`,
+      message: `Đã xử lý ${totalRecognized} nhân viên (${syncCreatedIds.length} nhân viên mới được tạo, ${syncUpdatedIds.length} nhân viên cập nhật) và lưu thành công ${totalPersistedCount} bản ghi chấm công vào cơ sở dữ liệu!`,
       totalRows,
-      successRows: validRows.length,
-      errorRows: errorRowsCount,
+      successRows: totalPersistedCount,
+      errorRows: errorRowsCount + dailyErrors.length,
       storageFilePath,
       importLogId: savedLogId,
       reportSummary,
