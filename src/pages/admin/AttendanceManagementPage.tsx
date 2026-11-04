@@ -68,6 +68,7 @@ export const AttendanceManagementPage: React.FC = () => {
     attendanceRecords,
     payrollRecords,
     importedMatrices,
+    isLoadingFromDatabase,
     updateEmployee,
     deleteEmployees,
     deleteAttendanceByEmployeeMonth,
@@ -142,6 +143,17 @@ export const AttendanceManagementPage: React.FC = () => {
         return;
       }
 
+      if (payrollRecords.length > 0) {
+        const first = payrollRecords[0];
+        if (first.month && Number(first.month) !== selectedMonth) {
+          setSelectedMonth(Number(first.month));
+        }
+        if (first.year && Number(first.year) !== selectedYear) {
+          setSelectedYear(Number(first.year));
+        }
+        return;
+      }
+
       if (attendanceRecords.length > 0) {
         for (const r of attendanceRecords) {
           if (r.date) {
@@ -159,7 +171,7 @@ export const AttendanceManagementPage: React.FC = () => {
         }
       }
     }
-  }, [importedMatrices, attendanceRecords, paramMonth]);
+  }, [importedMatrices, attendanceRecords, payrollRecords, paramMonth]);
 
   // Filters nhật ký ngày
   const [selectedDate, setSelectedDate] = useState('2026-11-04');
@@ -1537,15 +1549,27 @@ export const AttendanceManagementPage: React.FC = () => {
                   {paginatedEmployeeStats.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center py-12 text-slate-400 bg-white">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <Calendar className="w-8 h-8 text-slate-300" />
-                          <span className="font-bold text-sm text-slate-700">
-                            Không có dữ liệu chấm công cho Tháng {selectedMonth}/{selectedYear}
-                          </span>
-                          <p className="text-xs text-slate-400 max-w-sm">
-                            Dữ liệu kỳ này chưa được nạp hoặc đã được xóa hoàn tất khỏi hệ thống.
-                          </p>
-                        </div>
+                        {isLoadingFromDatabase ? (
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
+                            <span className="font-bold text-sm text-slate-700">
+                              Đang đồng bộ dữ liệu chấm công từ Supabase...
+                            </span>
+                            <p className="text-xs text-slate-400 max-w-sm">
+                              Hệ thống đang tải danh sách nhân viên và dữ liệu công Tháng {selectedMonth}/{selectedYear}.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Calendar className="w-8 h-8 text-slate-300" />
+                            <span className="font-bold text-sm text-slate-700">
+                              Không có dữ liệu chấm công cho Tháng {selectedMonth}/{selectedYear}
+                            </span>
+                            <p className="text-xs text-slate-400 max-w-sm">
+                              Dữ liệu kỳ này chưa được nạp hoặc đã được xóa hoàn tất khỏi hệ thống.
+                            </p>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (

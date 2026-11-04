@@ -362,8 +362,8 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
         employeeName: currentEmployee.fullName,
         department: currentEmployee.department,
         leaveBalance2025: leaveBalance.carriedOverDays || 0,
-        leaveGenerated2026: leaveBalance.allocatedDays || 12,
-        remainingDays: leaveBalance.remainingDays,
+        leaveGenerated2026: leaveBalance.allocatedDays != null ? leaveBalance.allocatedDays : 0,
+        remainingDays: leaveBalance.remainingDays != null ? leaveBalance.remainingDays : 0,
       };
     }
     return null;

@@ -43,14 +43,14 @@ export const leaveService = {
         employeeId: row.employee_id,
         year: row.year,
         carriedOverDays: Number(row.carried_over_days) || 0,
-        allocatedDays: Number(row.allocated_days) || 12,
+        allocatedDays: row.allocated_days != null ? Number(row.allocated_days) : 0,
         usedDays: Number(row.used_days) || 0,
         adjustedDays: Number(row.adjusted_days) || 0,
-        remainingDays: Number(row.remaining_days) || 0,
+        remainingDays: row.remaining_days != null ? Number(row.remaining_days) : 0,
         pendingDays: Number(row.pending_days) || 0,
         totalDays:
           (Number(row.carried_over_days) || 0) +
-          (Number(row.allocated_days) || 12) +
+          (row.allocated_days != null ? Number(row.allocated_days) : 0) +
           (Number(row.adjusted_days) || 0),
         note: row.note || '',
       }));
@@ -108,17 +108,21 @@ export const leaveService = {
       // 0. Đảm bảo nhân viên đã tồn tại trong bảng employees (tránh lỗi Foreign Key)
       const distinctEmpIds = Array.from(new Set(records.map((r) => r.employeeId.trim().toUpperCase())));
       if (distinctEmpIds.length > 0) {
-        const { data: existingEmps } = await supabase
-          .from('employees')
-          .select('id')
-          .in('id', distinctEmpIds);
+        const existingSet = new Set<string>();
+        for (let i = 0; i < distinctEmpIds.length; i += 100) {
+          const slice = distinctEmpIds.slice(i, i + 100);
+          const { data: existingEmps } = await supabase
+            .from('employees')
+            .select('id')
+            .in('id', slice);
+          (existingEmps || []).forEach((e: any) => existingSet.add(e.id.trim().toUpperCase()));
+        }
 
-        const existingSet = new Set((existingEmps || []).map((e: any) => e.id.trim().toUpperCase()));
         const missingIds = distinctEmpIds.filter((id) => !existingSet.has(id));
 
         if (missingIds.length > 0) {
           const newEmps = missingIds.map((id) => {
-            const safeEmpId = id.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const safeEmpId = id.toLowerCase().replace(/[^a-z0-9]/g, '') || `nv${Date.now()}`;
             return {
               id,
               full_name: `Nhân viên ${id}`,
@@ -134,7 +138,10 @@ export const leaveService = {
             };
           });
 
-          await supabase.from('employees').upsert(newEmps, { onConflict: 'id' });
+          for (let i = 0; i < newEmps.length; i += 100) {
+            const empSlice = newEmps.slice(i, i + 100);
+            await supabase.from('employees').upsert(empSlice, { onConflict: 'id' });
+          }
         }
       }
 
@@ -155,24 +162,35 @@ export const leaveService = {
         employee_id: r.employeeId.trim().toUpperCase(),
         year: r.year || year,
         carried_over_days: r.carriedOverDays || 0,
-        allocated_days: r.allocatedDays || 12,
+        allocated_days: r.allocatedDays != null ? r.allocatedDays : 0,
         used_days: r.usedDays || 0,
         adjusted_days: r.adjustedDays || 0,
-        remaining_days: r.remainingDays,
+        remaining_days: r.remainingDays != null ? r.remainingDays : 0,
         pending_days: r.pendingDays || 0,
         note: r.note || null,
         updated_at: new Date().toISOString(),
       }));
 
-      // 3. Batch ghi vào Supabase
-      const { error: upsertErr } = await supabase
-        .from('leave_balances')
-        .upsert(payload, { onConflict: 'employee_id,year' });
+      // 3. Batch ghi vào Supabase theo các lô 100 bản ghi để an toàn tuyệt đối
+      let savedCount = 0;
+      let lastErr: string | undefined = undefined;
+      for (let i = 0; i < payload.length; i += 100) {
+        const chunk = payload.slice(i, i + 100);
+        const { data, error: upsertErr } = await supabase
+          .from('leave_balances')
+          .upsert(chunk, { onConflict: 'employee_id,year' })
+          .select('id');
 
-      if (upsertErr) {
-        console.warn('Lưu vào Supabase bảng leave_balances không thành công:', upsertErr.message);
-        // Trả về false nhưng không làm crash ứng dụng
-        return { success: false, count: 0, error: upsertErr.message };
+        if (upsertErr) {
+          console.error(`Lỗi lưu lô ${i} vào leave_balances:`, upsertErr.message);
+          lastErr = upsertErr.message;
+        } else {
+          savedCount += data?.length || chunk.length;
+        }
+      }
+
+      if (savedCount === 0 && payload.length > 0) {
+        return { success: false, count: 0, error: lastErr || 'Lỗi khi lưu bảng leave_balances' };
       }
 
       // 4. Ghi audit log
@@ -275,21 +293,25 @@ export const leaveService = {
     }
 
     try {
-      // 1. Đảm bảo nhân viên đã có hồ sơ trong bảng employees
+      // 1. Đảm bảo nhân viên đã có hồ sơ trong bảng employees (chia lô 100 ID)
       const distinctCodes = Array.from(new Set(records.map((r) => r.employeeCode.trim().toUpperCase())));
       if (distinctCodes.length > 0) {
-        const { data: existingEmps } = await supabase
-          .from('employees')
-          .select('id')
-          .in('id', distinctCodes);
+        const existingSet = new Set<string>();
+        for (let i = 0; i < distinctCodes.length; i += 100) {
+          const slice = distinctCodes.slice(i, i + 100);
+          const { data: existingEmps } = await supabase
+            .from('employees')
+            .select('id')
+            .in('id', slice);
+          (existingEmps || []).forEach((e: any) => existingSet.add(e.id.trim().toUpperCase()));
+        }
 
-        const existingSet = new Set((existingEmps || []).map((e: any) => e.id.trim().toUpperCase()));
         const missingCodes = distinctCodes.filter((code) => !existingSet.has(code));
 
         if (missingCodes.length > 0) {
           const newEmps = missingCodes.map((code) => {
             const r = records.find((rec) => rec.employeeCode.trim().toUpperCase() === code);
-            const safeEmpId = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const safeEmpId = code.toLowerCase().replace(/[^a-z0-9]/g, '') || `nv${Date.now()}`;
             return {
               id: code,
               full_name: r?.employeeName || `Nhân viên ${code}`,
@@ -305,7 +327,10 @@ export const leaveService = {
             };
           });
 
-          await supabase.from('employees').upsert(newEmps, { onConflict: 'id' });
+          for (let i = 0; i < newEmps.length; i += 100) {
+            const empSlice = newEmps.slice(i, i + 100);
+            await supabase.from('employees').upsert(empSlice, { onConflict: 'id' });
+          }
         }
       }
 

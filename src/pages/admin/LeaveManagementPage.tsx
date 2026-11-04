@@ -19,6 +19,7 @@ import {
   Layers,
   ArrowRight,
   ShieldAlert,
+  RefreshCw,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +39,7 @@ export const LeaveManagementPage: React.FC = () => {
   const {
     employees,
     employeeLeaveBalances,
+    isLoadingFromDatabase,
     importEmployeeLeaveBalances,
     deleteEmployeeLeaveBalances,
     deleteEmployeeLeaveBalancesByPeriod,
@@ -639,13 +641,23 @@ export const LeaveManagementPage: React.FC = () => {
               {paginatedRecords.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-400">
-                    <div className="space-y-2">
-                      <AlertCircle className="w-7 h-7 mx-auto text-slate-300" />
-                      <div className="font-semibold">Không tìm thấy dữ liệu nhân viên</div>
-                      <p className="text-[11px] text-slate-400">
-                        Vui lòng kiểm tra lại bộ lọc hoặc bấm &quot;Nạp Excel Phép Tồn&quot; để thêm dữ liệu.
-                      </p>
-                    </div>
+                    {isLoadingFromDatabase ? (
+                      <div className="space-y-3 py-6">
+                        <RefreshCw className="w-8 h-8 mx-auto text-indigo-500 animate-spin" />
+                        <div className="font-semibold text-slate-700">Đang đồng bộ dữ liệu phép năm từ Supabase...</div>
+                        <p className="text-[11px] text-slate-400">
+                          Hệ thống đang tải số dư phép của 798 nhân sự từ cơ sở dữ liệu.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <AlertCircle className="w-7 h-7 mx-auto text-slate-300" />
+                        <div className="font-semibold">Không tìm thấy dữ liệu nhân viên</div>
+                        <p className="text-[11px] text-slate-400">
+                          Vui lòng kiểm tra lại bộ lọc hoặc bấm &quot;Nạp Excel Phép Tồn&quot; để thêm dữ liệu.
+                        </p>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (

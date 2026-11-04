@@ -244,8 +244,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       employeeName: `Nhân viên ${b.employeeId}`,
       department: 'Phòng Kỹ thuật',
       leaveBalance2025: b.carriedOverDays || 0,
-      leaveGenerated2026: b.allocatedDays || 12,
-      remainingDays: b.remainingDays || 12,
+      leaveGenerated2026: b.allocatedDays != null ? b.allocatedDays : 0,
+      remainingDays: b.remainingDays != null ? b.remainingDays : 0,
       year: b.year || 2026,
       month: null,
     }));
@@ -526,109 +526,153 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setIsDatabaseConnected(true);
 
-      // Tải đồng thời các bảng từ Supabase
-      const [dbEmployees, dbAttendance, dbPayroll, dbImports] = await Promise.allSettled([
-        employeeService.getEmployees(),
-        attendanceService.getDailyAttendance(),
-        payrollService.getPayrollSummaries(),
-        importService.getImportLogs(),
-      ]);
-
-      if (dbEmployees.status === 'fulfilled' && dbEmployees.value.length > 0) {
-        setEmployees((prev) => {
-          const prevMap = new Map(prev.map((e) => [e.id.trim().toUpperCase(), e]));
-          dbEmployees.value.forEach((e) => prevMap.set(e.id.trim().toUpperCase(), e));
-          const list = Array.from(prevMap.values());
-          saveToStorage('hr_employees', list);
-          return list;
-        });
-      }
-
-      if (dbAttendance.status === 'fulfilled' && dbAttendance.value.length > 0) {
-        setAttendanceRecords((prev) => {
-          const prevMap = new Map(prev.map((a) => [`${a.employeeId.trim().toUpperCase()}_${a.date}`, a]));
-          dbAttendance.value.forEach((a) => prevMap.set(`${a.employeeId.trim().toUpperCase()}_${a.date}`, a));
-          const list = Array.from(prevMap.values());
-          saveToStorage('hr_attendance_records', list);
-          return list;
-        });
-
-        // Tự động tái tạo và đồng bộ importedMatrices từ toàn bộ dữ liệu Supabase
-        const currentEmps =
-          dbEmployees.status === 'fulfilled' && dbEmployees.value.length > 0
-            ? dbEmployees.value
-            : employees;
-        const empMap = new Map(currentEmps.map((e) => [e.id.trim().toUpperCase(), e]));
-
-        const groups = new Map<string, { empId: string; month: number; year: number; records: AttendanceRecord[] }>();
-        dbAttendance.value.forEach((rec) => {
-          if (!rec.date) return;
-          const parts = rec.date.split('-');
-          if (parts.length === 3) {
-            const y = parseInt(parts[0], 10);
-            const m = parseInt(parts[1], 10);
-            const key = `${rec.employeeId.trim().toUpperCase()}_${m}_${y}`;
-            if (!groups.has(key)) {
-              groups.set(key, { empId: rec.employeeId.trim().toUpperCase(), month: m, year: y, records: [] });
-            }
-            groups.get(key)!.records.push(rec);
-          }
-        });
-
-        setImportedMatrices((prev) => {
-          const next = { ...prev };
-          groups.forEach((group, key) => {
-            const emp = empMap.get(group.empId) || {
-              id: group.empId,
-              fullName: `Nhân viên ${group.empId}`,
-              department: 'Phòng Kỹ thuật',
-              position: 'Nhân viên',
-              startDate: `${group.year}-01-01`,
-              status: 'active' as const,
-              baseSalary: 12000000,
-              allowance: 1500000,
-              email: `${group.empId.toLowerCase()}@congtyviet.com`,
-              phone: '',
-            };
-            next[key] = buildMatrixFromAttendanceDaily(emp, group.records, group.month, group.year);
+      // 1. Tải hồ sơ nhân viên (rất nhanh, ~200ms)
+      const empPromise = employeeService.getEmployees().then((dbEmployees) => {
+        if (dbEmployees && dbEmployees.length > 0) {
+          setEmployees((prev) => {
+            const prevMap = new Map(prev.map((e) => [e.id.trim().toUpperCase(), e]));
+            dbEmployees.forEach((e) => prevMap.set(e.id.trim().toUpperCase(), e));
+            const list = Array.from(prevMap.values());
+            saveToStorage('hr_employees', list);
+            return list;
           });
-          try {
-            localStorage.setItem('hr_imported_matrices', JSON.stringify(next));
-            sessionStorage.setItem('hr_imported_matrices', JSON.stringify(next));
-          } catch {}
-          return next;
-        });
-      }
+        }
+        return dbEmployees;
+      }).catch((e) => {
+        console.warn('Lỗi tải nhân viên:', e);
+        return [];
+      });
 
-      if (dbPayroll.status === 'fulfilled' && dbPayroll.value.length > 0) {
-        setPayrollRecords((prev) => {
-          const prevMap = new Map(prev.map((p) => [`${p.employeeId.trim().toUpperCase()}_${p.month}_${p.year}`, p]));
-          dbPayroll.value.forEach((p) => prevMap.set(`${p.employeeId.trim().toUpperCase()}_${p.month}_${p.year}`, p));
-          const list = Array.from(prevMap.values());
-          saveToStorage('hr_payroll_records', list);
-          return list;
-        });
-      }
+      // 2. Tải bảng lương tổng hợp / summaries (rất nhanh, ~200ms)
+      const payrollPromise = payrollService.getPayrollSummaries().then((dbPayroll) => {
+        if (dbPayroll && dbPayroll.length > 0) {
+          setPayrollRecords((prev) => {
+            const prevMap = new Map(prev.map((p) => [`${p.employeeId.trim().toUpperCase()}_${p.month}_${p.year}`, p]));
+            dbPayroll.forEach((p) => prevMap.set(`${p.employeeId.trim().toUpperCase()}_${p.month}_${p.year}`, p));
+            const list = Array.from(prevMap.values());
+            saveToStorage('hr_payroll_records', list);
+            return list;
+          });
+        }
+        return dbPayroll;
+      }).catch((e) => {
+        console.warn('Lỗi tải payroll summaries:', e);
+        return [];
+      });
 
-      if (dbImports.status === 'fulfilled' && dbImports.value.length > 0) {
-        setImportLogs(dbImports.value);
-      }
+      // 3. Tải lịch sử import (~100ms)
+      const importsPromise = importService.getImportLogs().then((dbImports) => {
+        if (dbImports && dbImports.length > 0) {
+          setImportLogs(dbImports);
+        }
+        return dbImports;
+      }).catch((e) => {
+        console.warn('Lỗi tải import logs:', e);
+        return [];
+      });
 
-      // Tải số dư phép năm từ Supabase
-      const [dbLeaveRes, dbElbRes] = await Promise.allSettled([
+      // 4. Tải số dư phép năm (~200ms)
+      const leavePromise = Promise.allSettled([
         leaveService.getLeaveBalances(),
         leaveService.getEmployeeLeaveBalances(),
-      ]);
+        empPromise,
+      ]).then(([lbRes, elbRes, empsRes]) => {
+        const lbData = lbRes.status === 'fulfilled' ? lbRes.value : [];
+        const elbData = elbRes.status === 'fulfilled' ? elbRes.value : [];
+        const currentEmps = (empsRes.status === 'fulfilled' && empsRes.value.length > 0) ? empsRes.value : employees;
+        const empMap = new Map(currentEmps.map((e) => [e.id.trim().toUpperCase(), e]));
 
-      if (dbLeaveRes.status === 'fulfilled' && dbLeaveRes.value.length > 0) {
-        setLeaveBalances(dbLeaveRes.value);
-        saveToStorage('hr_leave_balances', dbLeaveRes.value);
-      }
+        if (lbData.length > 0) {
+          setLeaveBalances(lbData);
+          saveToStorage('hr_leave_balances', lbData);
+        }
 
-      if (dbElbRes.status === 'fulfilled' && dbElbRes.value.length > 0) {
-        setEmployeeLeaveBalances(dbElbRes.value);
-        saveToStorage('hr_employee_leave_balances', dbElbRes.value);
-      }
+        if (elbData.length > 0) {
+          setEmployeeLeaveBalances(elbData);
+          saveToStorage('hr_employee_leave_balances', elbData);
+        } else if (lbData.length > 0) {
+          // Tự động ánh xạ từ bảng leave_balances nếu bảng employee_leave_balances chưa có trên Supabase
+          const mappedElb: EmployeeLeaveBalanceRecord[] = lbData.map((b) => {
+            const emp = empMap.get(b.employeeId.trim().toUpperCase());
+            return {
+              id: `ELB-${b.employeeId}-${b.year}`,
+              employeeCode: b.employeeId,
+              employeeName: emp?.fullName || `Nhân viên ${b.employeeId}`,
+              department: emp?.department || 'Phòng Kỹ thuật',
+              leaveBalance2025: b.carriedOverDays || 0,
+              leaveGenerated2026: b.allocatedDays != null ? b.allocatedDays : 0,
+              remainingDays: b.remainingDays != null ? b.remainingDays : 0,
+              year: b.year || 2026,
+              month: null,
+            };
+          });
+          setEmployeeLeaveBalances(mappedElb);
+          saveToStorage('hr_employee_leave_balances', mappedElb);
+        }
+      }).catch((e) => {
+        console.warn('Lỗi tải số dư phép:', e);
+      });
+
+      // 5. Tải chấm công hàng ngày (chạy ngầm, không chặn giao diện)
+      const attendancePromise = attendanceService.getDailyAttendance().then(async (dbAttendance) => {
+        if (dbAttendance && dbAttendance.length > 0) {
+          setAttendanceRecords((prev) => {
+            const prevMap = new Map(prev.map((a) => [`${a.employeeId.trim().toUpperCase()}_${a.date}`, a]));
+            dbAttendance.forEach((a) => prevMap.set(`${a.employeeId.trim().toUpperCase()}_${a.date}`, a));
+            const list = Array.from(prevMap.values());
+            saveToStorage('hr_attendance_records', list);
+            return list;
+          });
+
+          const currentEmps = await empPromise;
+          const activeEmps = currentEmps.length > 0 ? currentEmps : employees;
+          const empMap = new Map(activeEmps.map((e) => [e.id.trim().toUpperCase(), e]));
+
+          const groups = new Map<string, { empId: string; month: number; year: number; records: AttendanceRecord[] }>();
+          dbAttendance.forEach((rec) => {
+            if (!rec.date) return;
+            const parts = rec.date.split('-');
+            if (parts.length === 3) {
+              const y = parseInt(parts[0], 10);
+              const m = parseInt(parts[1], 10);
+              const key = `${rec.employeeId.trim().toUpperCase()}_${m}_${y}`;
+              if (!groups.has(key)) {
+                groups.set(key, { empId: rec.employeeId.trim().toUpperCase(), month: m, year: y, records: [] });
+              }
+              groups.get(key)!.records.push(rec);
+            }
+          });
+
+          setImportedMatrices((prev) => {
+            const next = { ...prev };
+            groups.forEach((group, key) => {
+              const emp = empMap.get(group.empId) || {
+                id: group.empId,
+                fullName: `Nhân viên ${group.empId}`,
+                department: 'Phòng Kỹ thuật',
+                position: 'Nhân viên',
+                startDate: `${group.year}-01-01`,
+                status: 'active' as const,
+                baseSalary: 12000000,
+                allowance: 1500000,
+                email: `${group.empId.toLowerCase()}@congtyviet.com`,
+                phone: '',
+              };
+              next[key] = buildMatrixFromAttendanceDaily(emp, group.records, group.month, group.year);
+            });
+            try {
+              localStorage.setItem('hr_imported_matrices', JSON.stringify(next));
+              sessionStorage.setItem('hr_imported_matrices', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        }
+      }).catch((e) => {
+        console.warn('Lỗi tải chấm công hàng ngày:', e);
+      });
+
+      // Chờ toàn bộ các tiến trình hoàn tất
+      await Promise.allSettled([empPromise, payrollPromise, importsPromise, leavePromise, attendancePromise]);
     } catch (err) {
       console.warn('Lỗi đồng bộ dữ liệu với Supabase, tiếp tục dùng dữ liệu hiện tại:', err);
     } finally {
