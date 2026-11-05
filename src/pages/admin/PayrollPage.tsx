@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   Banknote,
   Calendar,
@@ -22,6 +22,10 @@ import {
   KeyRound,
   ShieldCheck,
   RefreshCw,
+  Trash2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { PayrollRecord, ImportConflictMode, ParsedPayrollRow, ExcelPayrollMapping } from '../../types';
@@ -48,6 +52,9 @@ export const PayrollPage: React.FC = () => {
     settings,
     importPayrollData,
     updateEmployeeSalaryPin,
+    deletePayrollRecords,
+    deletePayrollByPeriod,
+    deletePayrollByYear,
   } = useData();
 
   const [selectedMonth, setSelectedMonth] = useState(10);
@@ -55,6 +62,44 @@ export const PayrollPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending' | 'draft'>('all');
   const [selectedSlip, setSelectedSlip] = useState<{ record: PayrollRecord; empName: string } | null>(null);
+
+  // =========================================================================
+  // STATE CHO CHỌN DÒNG (CHECKBOXES) & XÓA DỮ LIỆU DẠNG DROPDOWN
+  // =========================================================================
+  const [selectedRecordKeys, setSelectedRecordKeys] = useState<Set<string>>(new Set());
+  const [isDeleteDropdownOpen, setIsDeleteDropdownOpen] = useState(false);
+  const deleteDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteMode, setDeleteMode] = useState<'selected' | 'month' | 'year' | 'single'>('month');
+  const [singleRecordToDelete, setSingleRecordToDelete] = useState<{ record: PayrollRecord; empName: string } | null>(null);
+  const [deleteTargetMonth, setDeleteTargetMonth] = useState<number>(10);
+  const [deleteTargetYear, setDeleteTargetYear] = useState<number>(2026);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionSuccessMessage, setActionSuccessMessage] = useState<string>('');
+
+  // Phân trang danh sách bảng lương
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 20;
+
+  // Đồng bộ kỳ mục tiêu khi thay đổi tháng/năm trên bộ lọc
+  useEffect(() => {
+    setDeleteTargetMonth(selectedMonth);
+    setDeleteTargetYear(selectedYear);
+    setSelectedRecordKeys(new Set());
+    setCurrentPage(1);
+  }, [selectedMonth, selectedYear]);
+
+  // Đóng dropdown khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (deleteDropdownRef.current && !deleteDropdownRef.current.contains(e.target as Node)) {
+        setIsDeleteDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Modal đổi mã PIN cho nhân viên
   const [pinModalEmp, setPinModalEmp] = useState<{ empId: string; empName: string; currentPin: string } | null>(null);
@@ -127,6 +172,98 @@ export const PayrollPage: React.FC = () => {
   const totalInsurance = currentPayrolls.reduce((sum, p) => sum + p.insuranceDeduction, 0);
   const totalTax = currentPayrolls.reduce((sum, p) => sum + p.taxDeduction, 0);
   const paidCount = currentPayrolls.filter((p) => p.paymentStatus === 'paid').length;
+
+  // Phân trang an toàn
+  const totalPages = Math.max(1, Math.ceil(currentPayrolls.length / pageSize));
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const paginatedPayrolls = useMemo(() => {
+    const start = (validCurrentPage - 1) * pageSize;
+    return currentPayrolls.slice(start, start + pageSize);
+  }, [currentPayrolls, validCurrentPage, pageSize]);
+
+  // Kiểm tra đã chọn tất cả các dòng trên trang hiện tại
+  const isAllCurrentPageSelected = useMemo(() => {
+    if (paginatedPayrolls.length === 0) return false;
+    return paginatedPayrolls.every((p) => {
+      const key = p.id || `${p.employeeId.toUpperCase()}_${p.month}_${p.year}`;
+      return selectedRecordKeys.has(key);
+    });
+  }, [paginatedPayrolls, selectedRecordKeys]);
+
+  // Chọn hoặc bỏ chọn tất cả các dòng trên trang hiện tại
+  const handleToggleSelectAll = () => {
+    setSelectedRecordKeys((prev) => {
+      const next = new Set(prev);
+      if (isAllCurrentPageSelected) {
+        paginatedPayrolls.forEach((p) => {
+          const key = p.id || `${p.employeeId.toUpperCase()}_${p.month}_${p.year}`;
+          next.delete(key);
+        });
+      } else {
+        paginatedPayrolls.forEach((p) => {
+          const key = p.id || `${p.employeeId.toUpperCase()}_${p.month}_${p.year}`;
+          next.add(key);
+        });
+      }
+      return next;
+    });
+  };
+
+  // Chọn hoặc bỏ chọn từng dòng
+  const handleToggleSelectRow = (key: string) => {
+    setSelectedRecordKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Xác nhận thực hiện xóa dữ liệu bảng lương
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      if (deleteMode === 'month') {
+        await deletePayrollByPeriod(deleteTargetMonth, deleteTargetYear);
+        setActionSuccessMessage(`Đã xóa toàn bộ dữ liệu bảng lương Tháng ${deleteTargetMonth}/${deleteTargetYear}!`);
+        setSelectedRecordKeys(new Set());
+      } else if (deleteMode === 'year') {
+        await deletePayrollByYear(deleteTargetYear);
+        setActionSuccessMessage(`Đã xóa toàn bộ dữ liệu bảng lương cả Năm ${deleteTargetYear}!`);
+        setSelectedRecordKeys(new Set());
+      } else if (deleteMode === 'selected') {
+        const recordsToDelete = currentPayrolls.filter((p) => {
+          const key = p.id || `${p.employeeId.toUpperCase()}_${p.month}_${p.year}`;
+          return selectedRecordKeys.has(key);
+        });
+        await deletePayrollRecords(recordsToDelete);
+        setActionSuccessMessage(`Đã xóa ${recordsToDelete.length} bản ghi bảng lương đã chọn!`);
+        setSelectedRecordKeys(new Set());
+      } else if (deleteMode === 'single' && singleRecordToDelete) {
+        await deletePayrollRecords([singleRecordToDelete.record]);
+        setActionSuccessMessage(
+          `Đã xóa bản ghi lương của nhân viên ${singleRecordToDelete.empName} (${singleRecordToDelete.record.employeeId})!`
+        );
+        const key =
+          singleRecordToDelete.record.id ||
+          `${singleRecordToDelete.record.employeeId.toUpperCase()}_${singleRecordToDelete.record.month}_${singleRecordToDelete.record.year}`;
+        setSelectedRecordKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        setSingleRecordToDelete(null);
+      }
+      setIsDeleteModalOpen(false);
+    } catch (err: any) {
+      alert(`Lỗi khi xóa bảng lương: ${err?.message || 'Vui lòng thử lại'}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // =========================================================================
   // XỬ LÝ NHẬP FILE EXCEL BẢNG LƯƠNG
@@ -325,8 +462,159 @@ export const PayrollPage: React.FC = () => {
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span>Tải File Mẫu Bảng Lương</span>
           </button>
+
+          {/* Dropdown Xóa Dữ Liệu */}
+          <div className="relative" ref={deleteDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsDeleteDropdownOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Tùy chọn xóa dữ liệu bảng lương"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600" />
+              <span>Xóa Dữ Liệu</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-rose-500 transition-transform duration-150 ${
+                  isDeleteDropdownOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {isDeleteDropdownOpen && (
+              <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  Tùy Chọn Xóa Bảng Lương
+                </div>
+
+                {/* Xóa theo tháng */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDeleteDropdownOpen(false);
+                    setDeleteTargetMonth(selectedMonth);
+                    setDeleteTargetYear(selectedYear);
+                    setDeleteMode('month');
+                    setIsDeleteModalOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-rose-50 flex items-start gap-2.5 transition text-slate-700 hover:text-rose-700 group cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-rose-100/70 text-rose-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-rose-200">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800 group-hover:text-rose-700">
+                      Xóa Theo Tháng ({selectedMonth}/{selectedYear})
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Xóa bảng lương Tháng {selectedMonth}/{selectedYear}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Xóa theo năm */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDeleteDropdownOpen(false);
+                    setDeleteTargetMonth(selectedMonth);
+                    setDeleteTargetYear(selectedYear);
+                    setDeleteMode('year');
+                    setIsDeleteModalOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-rose-50 flex items-start gap-2.5 transition text-slate-700 hover:text-rose-700 group cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-rose-100/70 text-rose-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-rose-200">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800 group-hover:text-rose-700">
+                      Xóa Theo Năm (Cả Năm {selectedYear})
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Xóa bảng lương toàn bộ các tháng Năm {selectedYear}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Xóa nhân viên đã chọn nếu có */}
+                {selectedRecordKeys.size > 0 && (
+                  <div className="border-t border-slate-100 mt-1 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDeleteDropdownOpen(false);
+                        setDeleteMode('selected');
+                        setIsDeleteModalOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-rose-50 flex items-start gap-2.5 transition text-rose-700 font-bold group cursor-pointer"
+                    >
+                      <div className="w-6 h-6 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-rose-700">
+                          Xóa {selectedRecordKeys.size} Bản Ghi Đã Chọn
+                        </div>
+                        <div className="text-[11px] text-rose-500 font-normal">
+                          Xóa các bản ghi lương đã tick chọn
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Thông báo kết quả thao tác */}
+      {actionSuccessMessage && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{actionSuccessMessage}</span>
+          </div>
+          <button
+            onClick={() => setActionSuccessMessage('')}
+            className="p-1 hover:bg-emerald-100 rounded text-emerald-600 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Thanh tác vụ khi có dòng được chọn */}
+      {selectedRecordKeys.size > 0 && (
+        <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900">
+            <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+            <span>
+              Đã chọn <strong className="text-indigo-700 underline">{selectedRecordKeys.size}</strong> bản ghi lương trong Tháng {selectedMonth}/{selectedYear}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedRecordKeys(new Set())}
+              className="px-3 py-1 text-xs text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition cursor-pointer"
+            >
+              Bỏ chọn
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteMode('selected');
+                setIsDeleteModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold shadow-xs transition cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Xóa {selectedRecordKeys.size} bản ghi đã chọn</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -400,6 +688,16 @@ export const PayrollPage: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
               <tr>
+                <th className="py-3 px-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllCurrentPageSelected}
+                    onChange={handleToggleSelectAll}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    title="Chọn / Bỏ chọn tất cả trên trang này"
+                  />
+                </th>
+                <th className="py-3 px-2 w-12 text-center">STT</th>
                 <th className="py-3 px-3">Mã NV</th>
                 <th className="py-3 px-3">Họ và Tên</th>
                 <th className="py-3 px-3 text-center">Công chuẩn</th>
@@ -412,21 +710,39 @@ export const PayrollPage: React.FC = () => {
                 <th className="py-3 px-3 text-right font-bold text-indigo-700">Thực lĩnh</th>
                 <th className="py-3 px-3 text-center">Trạng thái</th>
                 <th className="py-3 px-3 text-center">Mã PIN</th>
-                <th className="py-3 px-3 text-center">Phiếu lương</th>
+                <th className="py-3 px-3 text-center w-24">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {currentPayrolls.length === 0 ? (
+              {paginatedPayrolls.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-8 text-slate-400">
+                  <td colSpan={15} className="text-center py-8 text-slate-400">
                     Không tìm thấy bản ghi lương nào cho kỳ Tháng {selectedMonth}/{selectedYear}.
                   </td>
                 </tr>
               ) : (
-                currentPayrolls.map((p) => {
+                paginatedPayrolls.map((p, idx) => {
                   const emp = employees.find((e) => e.id.toUpperCase() === p.employeeId.toUpperCase());
+                  const rowKey = p.id || `${p.employeeId.toUpperCase()}_${p.month}_${p.year}`;
+                  const isChecked = selectedRecordKeys.has(rowKey);
+                  const stt = (validCurrentPage - 1) * pageSize + idx + 1;
+
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition">
+                    <tr
+                      key={rowKey}
+                      className={`hover:bg-slate-50/80 transition ${
+                        isChecked ? 'bg-indigo-50/40' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSelectRow(rowKey)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
+                      <td className="py-3 px-2 text-center font-mono text-slate-400 font-semibold">{stt}</td>
                       <td className="py-3 px-3 font-mono font-bold text-slate-800">{p.employeeId}</td>
                       <td className="py-3 px-3 font-semibold text-slate-800">
                         {emp?.fullName || 'Nhân viên'}
@@ -470,15 +786,28 @@ export const PayrollPage: React.FC = () => {
                         </button>
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() =>
-                            setSelectedSlip({ record: p, empName: emp?.fullName || 'Nhân viên' })
-                          }
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                          title="Xem phiếu lương"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() =>
+                              setSelectedSlip({ record: p, empName: emp?.fullName || 'Nhân viên' })
+                            }
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                            title="Xem phiếu lương"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSingleRecordToDelete({ record: p, empName: emp?.fullName || p.employeeId });
+                              setDeleteMode('single');
+                              setIsDeleteModalOpen(true);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="Xóa bản ghi lương này"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -491,19 +820,32 @@ export const PayrollPage: React.FC = () => {
 
       {/* Mobile Card View */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:hidden gap-3">
-        {currentPayrolls.map((p) => {
+        {paginatedPayrolls.map((p) => {
           const emp = employees.find((e) => e.id.toUpperCase() === p.employeeId.toUpperCase());
+          const rowKey = p.id || `${p.employeeId.toUpperCase()}_${p.month}_${p.year}`;
+          const isChecked = selectedRecordKeys.has(rowKey);
+
           return (
             <div
-              key={p.id}
-              className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm space-y-3"
+              key={rowKey}
+              className={`bg-white rounded-xl border p-4 shadow-sm space-y-3 transition ${
+                isChecked ? 'border-indigo-400 bg-indigo-50/20' : 'border-slate-200/80'
+              }`}
             >
               <div className="flex items-start justify-between">
-                <div>
-                  <h4 className="font-bold text-sm text-slate-800">{emp?.fullName}</h4>
-                  <span className="text-xs font-mono font-semibold text-indigo-600">
-                    {p.employeeId} &bull; {p.actualWorkDays}/{p.standardWorkDays} ngày công
-                  </span>
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => handleToggleSelectRow(rowKey)}
+                    className="mt-1 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-800">{emp?.fullName}</h4>
+                    <span className="text-xs font-mono font-semibold text-indigo-600">
+                      {p.employeeId} &bull; {p.actualWorkDays}/{p.standardWorkDays} ngày công
+                    </span>
+                  </div>
                 </div>
                 <PaymentStatusBadge status={p.paymentStatus} />
               </div>
@@ -522,19 +864,181 @@ export const PayrollPage: React.FC = () => {
                 >
                   <KeyRound className="w-3.5 h-3.5" /> PIN: {emp?.salaryPin || '1234'}
                 </button>
-                <button
-                  onClick={() =>
-                    setSelectedSlip({ record: p, empName: emp?.fullName || 'Nhân viên' })
-                  }
-                  className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center gap-1 transition"
-                >
-                  <Eye className="w-3.5 h-3.5" /> Xem phiếu
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() =>
+                      setSelectedSlip({ record: p, empName: emp?.fullName || 'Nhân viên' })
+                    }
+                    className="px-2.5 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Phiếu
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSingleRecordToDelete({ record: p, empName: emp?.fullName || p.employeeId });
+                      setDeleteMode('single');
+                      setIsDeleteModalOpen(true);
+                    }}
+                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                    title="Xóa bản ghi lương này"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Phân trang danh sách bảng lương */}
+      {totalPages > 1 && (
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="text-slate-500">
+            Hiển thị <strong>{(validCurrentPage - 1) * pageSize + 1}</strong> -{' '}
+            <strong>{Math.min(validCurrentPage * pageSize, currentPayrolls.length)}</strong> trên tổng số{' '}
+            <strong>{currentPayrolls.length}</strong> bản ghi lương
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={validCurrentPage === 1}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
+              title="Trang trước"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="px-3 py-1 font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg">
+              Trang {validCurrentPage} / {totalPages}
+            </div>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={validCurrentPage === totalPages}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
+              title="Trang tiếp"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL XÁC NHẬN XÓA BẢNG LƯƠNG (GIỐNG PHẦN QUẢN LÝ CÔNG) */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => !isDeleting && setIsDeleteModalOpen(false)}
+        title={
+          deleteMode === 'single'
+            ? 'Xác Nhận Xóa Bản Ghi Lương Nhân Viên'
+            : deleteMode === 'selected'
+            ? `Xác Nhận Xóa ${selectedRecordKeys.size} Bản Ghi Lương Đã Chọn`
+            : deleteMode === 'month'
+            ? `Xác Nhận Xóa Dữ Liệu Bảng Lương Tháng ${deleteTargetMonth}/${deleteTargetYear}`
+            : `Xác Nhận Xóa Dữ Liệu Bảng Lương Cả Năm ${deleteTargetYear}`
+        }
+        subtitle="Cảnh báo: Thao tác này sẽ xóa vĩnh viễn dữ liệu bảng lương khỏi hệ thống"
+        size="md"
+      >
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-rose-950 text-sm mb-1">
+                {deleteMode === 'single'
+                  ? `Xóa bản ghi lương của ${singleRecordToDelete?.empName} (${singleRecordToDelete?.record.employeeId})`
+                  : deleteMode === 'selected'
+                  ? `Xóa ${selectedRecordKeys.size} bản ghi lương đã tick chọn`
+                  : deleteMode === 'month'
+                  ? `Xóa dữ liệu bảng lương Tháng ${deleteTargetMonth}/${deleteTargetYear}`
+                  : `Xóa toàn bộ dữ liệu bảng lương cả Năm ${deleteTargetYear}`}
+              </div>
+              <p className="text-rose-800 leading-relaxed">
+                {deleteMode === 'single'
+                  ? `CẢNH BÁO: Thao tác này sẽ XÓA VĨNH VIỄN bản ghi lương Tháng ${singleRecordToDelete?.record.month}/${singleRecordToDelete?.record.year} của nhân viên ${singleRecordToDelete?.empName} (Mã NV: ${singleRecordToDelete?.record.employeeId}) khỏi hệ thống. Thao tác không thể hoàn tác!`
+                  : deleteMode === 'selected'
+                  ? `CẢNH BÁO: Thao tác này sẽ XÓA TOÀN BỘ ${selectedRecordKeys.size} bản ghi lương đã tick chọn khỏi hệ thống. Thao tác không thể hoàn tác!`
+                  : deleteMode === 'month'
+                  ? `CẢNH BÁO: Thao tác này sẽ XÓA TOÀN BỘ dữ liệu quyết toán bảng lương của Tháng ${deleteTargetMonth}/${deleteTargetYear} khỏi hệ thống! Thao tác không thể hoàn tác.`
+                  : `CẢNH BÁO NGUY HIỂM: Thao tác này sẽ XÓA TOÀN BỘ dữ liệu bảng lương của TOÀN BỘ 12 THÁNG TRONG NĂM ${deleteTargetYear} khỏi hệ thống! Thao tác không thể hoàn tác.`}
+              </p>
+            </div>
+          </div>
+
+          {/* Bộ chọn tháng / năm trực tiếp trong modal xóa */}
+          {deleteMode === 'month' && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <span className="block text-[11px] font-bold text-slate-700">
+                Kỳ lương muốn xóa:
+              </span>
+              <div className="flex items-center gap-2">
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Tháng:</label>
+                  <select
+                    value={deleteTargetMonth}
+                    onChange={(e) => setDeleteTargetMonth(Number(e.target.value))}
+                    className="py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold outline-none cursor-pointer"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+                      <option key={m} value={m}>Tháng {m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Năm:</label>
+                  <select
+                    value={deleteTargetYear}
+                    onChange={(e) => setDeleteTargetYear(Number(e.target.value))}
+                    className="py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold outline-none cursor-pointer"
+                  >
+                    {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                      <option key={y} value={y}>Năm {y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {deleteMode === 'year' && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <span className="block text-[11px] font-bold text-slate-700">
+                Năm muốn xóa toàn bộ bảng lương (cả 12 tháng):
+              </span>
+              <div className="w-36">
+                <select
+                  value={deleteTargetYear}
+                  onChange={(e) => setDeleteTargetYear(Number(e.target.value))}
+                  className="w-full py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold outline-none cursor-pointer"
+                >
+                  {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                    <option key={y} value={y}>Năm {y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => setIsDeleteModalOpen(false)}
+              className="px-4 py-2 text-xs border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 cursor-pointer transition"
+            >
+              Hủy bỏ
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={handleConfirmDelete}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{isDeleting ? 'Đang xóa...' : 'Xác Nhận Xóa Ngay'}</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Pay Slip Modal */}
       <Modal

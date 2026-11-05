@@ -79,6 +79,9 @@ interface DataContextType {
     mode: ImportConflictMode;
     importedByName: string;
   }) => Promise<{ success: boolean; count: number; error?: string }>;
+  deletePayrollRecords: (records: { id?: string; employeeId: string; month: number; year: number }[]) => Promise<void>;
+  deletePayrollByPeriod: (month: number, year: number) => Promise<void>;
+  deletePayrollByYear: (year: number) => Promise<void>;
   importLeaveBalances: (params: {
     year: number;
     records: LeaveBalance[];
@@ -1513,6 +1516,72 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res;
   };
 
+  const deletePayrollRecords = async (records: { id?: string; employeeId: string; month: number; year: number }[]) => {
+    if (records.length === 0) return;
+
+    const keysToRemove = new Set(
+      records.map((r) => `${r.employeeId.trim().toUpperCase()}_${Number(r.month)}_${Number(r.year)}`)
+    );
+    const idsToRemove = new Set(records.map((r) => r.id).filter(Boolean));
+
+    setPayrollRecords((prev) => {
+      const remaining = prev.filter((p) => {
+        if (p.id && idsToRemove.has(p.id)) return false;
+        const key = `${p.employeeId.trim().toUpperCase()}_${Number(p.month)}_${Number(p.year)}`;
+        return !keysToRemove.has(key);
+      });
+      saveToStorage('hr_payroll_records', remaining);
+      return remaining;
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        await payrollService.deletePayrollRecords(records);
+      } catch (err) {
+        console.error('Lỗi khi xóa bảng lương từ Supabase:', err);
+      }
+    }
+  };
+
+  const deletePayrollByPeriod = async (month: number, year: number) => {
+    const numMonth = Number(month);
+    const numYear = Number(year);
+
+    setPayrollRecords((prev) => {
+      const remaining = prev.filter(
+        (p) => !(Number(p.month) === numMonth && Number(p.year) === numYear)
+      );
+      saveToStorage('hr_payroll_records', remaining);
+      return remaining;
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        await payrollService.deletePayrollByPeriod(numMonth, numYear);
+      } catch (err) {
+        console.error('Lỗi khi xóa bảng lương kỳ từ Supabase:', err);
+      }
+    }
+  };
+
+  const deletePayrollByYear = async (year: number) => {
+    const numYear = Number(year);
+
+    setPayrollRecords((prev) => {
+      const remaining = prev.filter((p) => Number(p.year) !== numYear);
+      saveToStorage('hr_payroll_records', remaining);
+      return remaining;
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        await payrollService.deletePayrollByYear(numYear);
+      } catch (err) {
+        console.error('Lỗi khi xóa bảng lương năm từ Supabase:', err);
+      }
+    }
+  };
+
   const importLeaveBalances = async (params: {
     year: number;
     records: LeaveBalance[];
@@ -1813,6 +1882,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addImportLog,
         importAttendanceData,
         importPayrollData,
+        deletePayrollRecords,
+        deletePayrollByPeriod,
+        deletePayrollByYear,
         importLeaveBalances,
         importEmployeeLeaveBalances,
         deleteEmployeeLeaveBalances,

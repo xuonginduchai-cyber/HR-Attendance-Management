@@ -214,6 +214,111 @@ export const payrollService = {
   },
 
   /**
+   * Xóa danh sách bản ghi bảng lương theo ID hoặc (employee_id, month, year)
+   */
+  async deletePayrollRecords(
+    records: { id?: string; employeeId: string; month: number; year: number }[]
+  ): Promise<void> {
+    if (!isSupabaseConfigured || records.length === 0) return;
+
+    try {
+      // 1. Ưu tiên xóa theo id nếu là valid UUID
+      const validUuids = records
+        .map((r) => r.id)
+        .filter(
+          (id): id is string =>
+            Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+        );
+
+      if (validUuids.length > 0) {
+        for (let i = 0; i < validUuids.length; i += 100) {
+          const chunk = validUuids.slice(i, i + 100);
+          const { error } = await supabase.from('attendance_summaries').delete().in('id', chunk);
+          if (error) console.warn('Lỗi xóa theo UUID trong attendance_summaries:', error.message);
+        }
+      }
+
+      // 2. Xóa theo (employee_id, month, year) cho các bản ghi còn lại
+      const nonUuidRecords = records.filter(
+        (r) => !r.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id)
+      );
+      if (nonUuidRecords.length > 0) {
+        const groups = new Map<string, string[]>();
+        nonUuidRecords.forEach((r) => {
+          const key = `${r.month}_${r.year}`;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(r.employeeId.trim().toUpperCase());
+        });
+
+        for (const [key, empIds] of groups.entries()) {
+          const [m, y] = key.split('_').map(Number);
+          for (let i = 0; i < empIds.length; i += 100) {
+            const chunk = empIds.slice(i, i + 100);
+            const { error } = await supabase
+              .from('attendance_summaries')
+              .delete()
+              .eq('month', m)
+              .eq('year', y)
+              .in('employee_id', chunk);
+            if (error) console.warn('Lỗi xóa theo employee_id trong attendance_summaries:', error.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi xóa bảng lương từ Supabase:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * Xóa toàn bộ bảng lương của một kỳ (Tháng, Năm)
+   */
+  async deletePayrollByPeriod(month: number, year: number): Promise<void> {
+    if (!isSupabaseConfigured) return;
+
+    try {
+      const numMonth = Number(month);
+      const numYear = Number(year);
+      const { error } = await supabase
+        .from('attendance_summaries')
+        .delete()
+        .eq('month', numMonth)
+        .eq('year', numYear);
+
+      if (error) {
+        console.error('Lỗi khi xóa bảng lương theo tháng từ Supabase:', error);
+        throw error;
+      }
+    } catch (err) {
+      console.error('Lỗi khi xóa bảng lương theo tháng:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * Xóa toàn bộ bảng lương của cả Năm
+   */
+  async deletePayrollByYear(year: number): Promise<void> {
+    if (!isSupabaseConfigured) return;
+
+    try {
+      const numYear = Number(year);
+      const { error } = await supabase
+        .from('attendance_summaries')
+        .delete()
+        .eq('year', numYear);
+
+      if (error) {
+        console.error('Lỗi khi xóa bảng lương theo năm từ Supabase:', error);
+        throw error;
+      }
+    } catch (err) {
+      console.error('Lỗi khi xóa bảng lương theo năm:', err);
+      throw err;
+    }
+  },
+
+  /**
    * Xác thực mã PIN tra cứu lương của nhân viên
    * Mặc định là '1234' hoặc 4 số cuối số điện thoại nếu nhân viên chưa đổi PIN
    */
