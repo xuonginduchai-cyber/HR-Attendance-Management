@@ -34,6 +34,7 @@ import { auditService } from '../services/auditService';
 import { buildMatrixFromAttendanceDaily, isDateInPeriod, isDateInYear } from '../utils/excelParser';
 
 interface DataContextType {
+  dataVersion: number;
   employees: Employee[];
   attendanceRecords: AttendanceRecord[];
   payrollRecords: PayrollRecord[];
@@ -296,6 +297,66 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
   };
 
+  const [dataVersion, setDataVersion] = useState<number>(0);
+
+  // Phát thông báo thay đổi dữ liệu thời gian thực (hỗ trợ cả cùng tab lẫn đa tab)
+  const notifyDataChanged = useCallback((action: string, ids?: string[]) => {
+    setDataVersion((v) => v + 1);
+    try {
+      const channel = new BroadcastChannel('hr_data_sync_channel');
+      channel.postMessage({ action, ids, timestamp: Date.now() });
+      channel.close();
+    } catch {}
+    try {
+      localStorage.setItem('hr_data_sync_trigger', `${Date.now()}_${action}`);
+    } catch {}
+  }, []);
+
+  // Lắng nghe thay đổi dữ liệu từ các tab hoặc cửa sổ khác
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('hr_data_sync_channel');
+      channel.onmessage = () => {
+        setDataVersion((v) => v + 1);
+        try {
+          const rawEmps = localStorage.getItem('hr_employees');
+          if (rawEmps) setEmployees(JSON.parse(rawEmps));
+          const rawAtt = localStorage.getItem('hr_attendance_records');
+          if (rawAtt) setAttendanceRecords(JSON.parse(rawAtt));
+          const rawMat = localStorage.getItem('hr_imported_matrices');
+          if (rawMat) setImportedMatrices(JSON.parse(rawMat));
+          const rawPay = localStorage.getItem('hr_payroll_records');
+          if (rawPay) setPayrollRecords(JSON.parse(rawPay));
+          const rawLeave = localStorage.getItem('hr_leave_balances');
+          if (rawLeave) setLeaveBalances(JSON.parse(rawLeave));
+          const rawElb = localStorage.getItem('hr_employee_leave_balances');
+          if (rawElb) setEmployeeLeaveBalances(JSON.parse(rawElb));
+        } catch {}
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'hr_data_sync_trigger' || e.key?.startsWith('hr_')) {
+        setDataVersion((v) => v + 1);
+        try {
+          const rawEmps = localStorage.getItem('hr_employees');
+          if (rawEmps) setEmployees(JSON.parse(rawEmps));
+          const rawAtt = localStorage.getItem('hr_attendance_records');
+          if (rawAtt) setAttendanceRecords(JSON.parse(rawAtt));
+          const rawMat = localStorage.getItem('hr_imported_matrices');
+          if (rawMat) setImportedMatrices(JSON.parse(rawMat));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      channel?.close();
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
   const getEmployeeById = useCallback(
     (id: string): Employee | undefined => {
       if (!id) return undefined;
@@ -324,7 +385,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // 3. Tìm từ attendanceRecords
+      // 3. Nếu danh sách nhân viên đã có dữ liệu từ DB (employees > 0),
+      // tuyệt đối KHÔNG tự động lấy từ attendanceRecords/payroll cũ để tránh hồi sinh nhân viên đã bị xóa!
+      if (employees.length > 0) {
+        return undefined;
+      }
+
+      // 4. Tìm từ attendanceRecords (chỉ trong chế độ chưa nạp danh sách nhân viên)
       const att = attendanceRecords.find((r) => r.employeeId.trim().toUpperCase() === cleanId);
       if (att) {
         return {
@@ -341,7 +408,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // 4. Tìm từ payrollRecords
+      // 5. Tìm từ payrollRecords (chỉ trong chế độ chưa nạp danh sách nhân viên)
       const pay = payrollRecords.find((p) => p.employeeId.trim().toUpperCase() === cleanId);
       if (pay) {
         return {
@@ -555,13 +622,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 1. Tải hồ sơ nhân viên (rất nhanh, ~200ms)
       const empPromise = employeeService.getEmployees().then((dbEmployees) => {
         if (dbEmployees && dbEmployees.length > 0) {
-          setEmployees((prev) => {
-            const prevMap = new Map(prev.map((e) => [e.id.trim().toUpperCase(), e]));
-            dbEmployees.forEach((e) => prevMap.set(e.id.trim().toUpperCase(), e));
-            const list = Array.from(prevMap.values());
-            saveToStorage('hr_employees', list);
-            return list;
-          });
+          setEmployees(dbEmployees);
+          saveToStorage('hr_employees', dbEmployees);
         }
         return dbEmployees;
       }).catch((e) => {
@@ -572,13 +634,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 2. Tải bảng lương tổng hợp / summaries (rất nhanh, ~200ms)
       const payrollPromise = payrollService.getPayrollSummaries().then((dbPayroll) => {
         if (dbPayroll && dbPayroll.length > 0) {
-          setPayrollRecords((prev) => {
-            const prevMap = new Map(prev.map((p) => [`${p.employeeId.trim().toUpperCase()}_${p.month}_${p.year}`, p]));
-            dbPayroll.forEach((p) => prevMap.set(`${p.employeeId.trim().toUpperCase()}_${p.month}_${p.year}`, p));
-            const list = Array.from(prevMap.values());
-            saveToStorage('hr_payroll_records', list);
-            return list;
-          });
+          setPayrollRecords(dbPayroll);
+          saveToStorage('hr_payroll_records', dbPayroll);
         }
         return dbPayroll;
       }).catch((e) => {
@@ -643,13 +700,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 5. Tải chấm công hàng ngày (chạy ngầm, không chặn giao diện)
       const attendancePromise = attendanceService.getDailyAttendance().then(async (dbAttendance) => {
         if (dbAttendance && dbAttendance.length > 0) {
-          setAttendanceRecords((prev) => {
-            const prevMap = new Map(prev.map((a) => [`${a.employeeId.trim().toUpperCase()}_${a.date}`, a]));
-            dbAttendance.forEach((a) => prevMap.set(`${a.employeeId.trim().toUpperCase()}_${a.date}`, a));
-            const list = Array.from(prevMap.values());
-            saveToStorage('hr_attendance_records', list);
-            return list;
-          });
+          setAttendanceRecords(dbAttendance);
+          saveToStorage('hr_attendance_records', dbAttendance);
 
           const currentEmps = await empPromise;
           const activeEmps = currentEmps.length > 0 ? currentEmps : employees;
@@ -670,8 +722,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           });
 
-          setImportedMatrices((prev) => {
-            const next = { ...prev };
+          setImportedMatrices(() => {
+            const next: Record<string, EmployeeAttendanceMatrix> = {};
             groups.forEach((group, key) => {
               const emp = empMap.get(group.empId) || {
                 id: group.empId,
@@ -700,6 +752,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Chờ toàn bộ các tiến trình hoàn tất
       await Promise.allSettled([empPromise, payrollPromise, importsPromise, leavePromise, attendancePromise]);
+      notifyDataChanged('SYNC_SUPABASE');
     } catch (err) {
       console.warn('Lỗi đồng bộ dữ liệu với Supabase, tiếp tục dùng dữ liệu hiện tại:', err);
     } finally {
@@ -790,6 +843,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
+    setEmployeeLeaveBalances((prev) => {
+      const updated = prev.map((b) =>
+        b.employeeCode.trim().toUpperCase() === cleanId
+          ? { ...b, employeeName: cleanEmp.fullName, department: cleanEmp.department }
+          : b
+      );
+      saveToStorage('hr_employee_leave_balances', updated);
+      return updated;
+    });
+
     if (isSupabaseConfigured) {
       try {
         await employeeService.updateEmployee(cleanEmp);
@@ -798,6 +861,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi cập nhật nhân viên trên Supabase:', err);
       }
     }
+
+    notifyDataChanged('UPDATE_EMPLOYEE', [cleanId]);
   };
 
   const deleteEmployee = async (id: string) => {
@@ -826,6 +891,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLeaveBalances((prev) => {
       const remaining = prev.filter((b) => !idSet.has(b.employeeId.trim().toUpperCase()));
       saveToStorage('hr_leave_balances', remaining);
+      return remaining;
+    });
+    setEmployeeLeaveBalances((prev) => {
+      const remaining = prev.filter((b) => !idSet.has(b.employeeCode.trim().toUpperCase()));
+      saveToStorage('hr_employee_leave_balances', remaining);
       return remaining;
     });
     setLeaveRequests((prev) => {
@@ -869,6 +939,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa nhân viên trên Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_EMPLOYEES', ids);
   };
 
   const addAttendanceRecord = async (record: Omit<AttendanceRecord, 'id'>) => {
@@ -888,6 +960,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi lưu điểm danh vào Supabase:', err);
       }
     }
+    notifyDataChanged('ADD_ATTENDANCE');
   };
 
   const updateAttendanceRecord = async (id: string, updates: Partial<AttendanceRecord>) => {
@@ -903,6 +976,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi cập nhật điểm danh trên Supabase:', err);
       }
     }
+    notifyDataChanged('UPDATE_ATTENDANCE');
   };
 
   const deleteAttendanceRecords = async (ids: string[]) => {
@@ -922,6 +996,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa bản ghi điểm danh trên Supabase:', err);
       }
     }
+    notifyDataChanged('DELETE_ATTENDANCE', ids);
   };
 
   const deleteAttendanceByEmployeeMonth = async (employeeIds: string[], month: number, year: number) => {
@@ -942,7 +1017,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setImportedMatrices((prev) => {
       const next: Record<string, EmployeeAttendanceMatrix> = {};
       Object.entries(prev).forEach(([key, mat]) => {
-        if (!(Number(mat.month) === numMonth && Number(mat.year) === numYear && empSet.has(mat.employeeId.trim().toUpperCase()))) {
+        const keyParts = key.split('_');
+        const keyEmpId = keyParts[0]?.trim().toUpperCase();
+        const keyMonth = Number(keyParts[1]);
+        const keyYear = Number(keyParts[2]);
+        const matEmpId = mat.employeeId?.trim().toUpperCase();
+        const matMonth = Number(mat.month);
+        const matYear = Number(mat.year);
+
+        const isTarget =
+          (empSet.has(matEmpId) && matMonth === numMonth && matYear === numYear) ||
+          (empSet.has(keyEmpId) && keyMonth === numMonth && keyYear === numYear);
+
+        if (!isTarget) {
           next[key] = mat;
         }
       });
@@ -975,6 +1062,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa chấm công nhân viên theo kỳ trên Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_ATTENDANCE_EMP_MONTH', employeeIds);
   };
 
   const deleteAttendanceByPeriod = async (month: number, year: number) => {
@@ -1059,6 +1148,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa kỳ chấm công trên Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_ATTENDANCE_PERIOD');
   };
 
   const deleteAttendanceByYear = async (year: number) => {
@@ -1132,6 +1223,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa dữ liệu chấm công cả năm trên Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_ATTENDANCE_YEAR');
   };
 
   const approveLeaveRequest = (id: string, note?: string) => {
@@ -1535,6 +1628,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
+    notifyDataChanged('IMPORT_ATTENDANCE');
     return res;
   };
 
@@ -1576,6 +1670,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    notifyDataChanged('IMPORT_PAYROLL');
     return res;
   };
 
@@ -1604,6 +1699,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa bảng lương từ Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_PAYROLL');
   };
 
   const deletePayrollByPeriod = async (month: number, year: number) => {
@@ -1625,6 +1722,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa bảng lương kỳ từ Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_PAYROLL_PERIOD');
   };
 
   const deletePayrollByYear = async (year: number) => {
@@ -1643,6 +1742,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Lỗi khi xóa bảng lương năm từ Supabase:', err);
       }
     }
+
+    notifyDataChanged('DELETE_PAYROLL_YEAR');
   };
 
   const importLeaveBalances = async (params: {
@@ -1679,6 +1780,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    notifyDataChanged('IMPORT_LEAVE');
     return res;
   };
 
@@ -1790,6 +1892,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
 
+      notifyDataChanged('IMPORT_EMPLOYEE_LEAVE');
       return { success: true, count: recordsToSave.length };
     } catch (err: any) {
       console.error('Lỗi khi nạp dữ liệu phép tồn:', err);
@@ -1807,6 +1910,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
       await leaveService.deleteEmployeeLeaveBalances(ids);
     }
+    notifyDataChanged('DELETE_EMPLOYEE_LEAVE', ids);
   };
 
   const deleteEmployeeLeaveBalancesByPeriod = async (month: number | null, year: number): Promise<void> => {
@@ -1825,6 +1929,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
       await leaveService.deleteEmployeeLeaveBalancesByPeriod(month, year);
     }
+    notifyDataChanged('DELETE_EMPLOYEE_LEAVE_PERIOD');
   };
 
   const deleteEmployeeLeaveBalancesByYear = async (year: number): Promise<void> => {
@@ -1837,6 +1942,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
       await leaveService.deleteEmployeeLeaveBalancesByYear(year);
     }
+    notifyDataChanged('DELETE_EMPLOYEE_LEAVE_YEAR');
   };
 
   const getEmployeeLeaveBalance = (
@@ -1922,6 +2028,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <DataContext.Provider
       value={{
+        dataVersion,
         employees,
         attendanceRecords,
         payrollRecords,

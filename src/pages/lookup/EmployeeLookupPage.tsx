@@ -69,6 +69,7 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
     attendanceRecords,
     leaveRequests,
     verifyEmployeeSalaryPin,
+    dataVersion,
   } = useData();
 
   // Search input state (mặc định trống để người dùng nhập)
@@ -259,13 +260,26 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
           setRemainingLockout(0);
           lookupSecurity.recordAttempt(true);
           return;
+        } else {
+          // RPC trả về rõ ràng: Không tìm thấy nhân viên này trên Supabase (hoặc đã bị xóa)!
+          // Lập tức hiển thị không tìm thấy, tuyệt đối KHÔNG fallback sang mock data để hồi sinh nhân viên!
+          lookupSecurity.recordAttempt(false);
+          setRpcResult(null);
+          setSearchedEmployeeId(trimmed);
+          setHasSearched(true);
+          setSearchError(
+            res.message ||
+            `Không có dữ liệu: Không tìm thấy nhân viên có mã "${trimmed}" trong danh mục quản lý công kỳ Tháng ${targetMonth}/${targetYear}.`
+          );
+          setIsSearching(false);
+          return;
         }
       } catch (err: any) {
         console.warn('Lỗi gọi Supabase RPC, chuyển sang kiểm tra dữ liệu hệ thống cục bộ:', err);
       }
     }
 
-    // 2. Tra cứu cục bộ (Hỗ trợ 100% nhân viên trong bộ nhớ và ma trận nạp từ Excel)
+    // 2. Tra cứu cục bộ (chỉ khi offline / chưa cấu hình Supabase hoặc lỗi mạng)
     const localEmp = getEmployeeById(trimmed);
     if (localEmp) {
       lookupSecurity.recordAttempt(true);
@@ -290,6 +304,40 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
     setIsSearching(false);
   };
 
+  // Tự động đồng bộ và cập nhật tra cứu ngay lập tức khi dữ liệu trong Quản lý công thay đổi hoặc bị xóa
+  useEffect(() => {
+    if (hasSearched && searchedEmployeeId) {
+      performSearch(searchedEmployeeId, selectedMonth, selectedYear);
+    }
+  }, [dataVersion]);
+
+  // Lắng nghe thay đổi dữ liệu từ các tab hoặc cửa sổ khác trong thời gian thực
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('hr_data_sync_channel');
+      channel.onmessage = () => {
+        if (hasSearched && searchedEmployeeId) {
+          performSearch(searchedEmployeeId, selectedMonth, selectedYear);
+        }
+      };
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'hr_data_sync_trigger' || e.key?.startsWith('hr_')) {
+        if (hasSearched && searchedEmployeeId) {
+          performSearch(searchedEmployeeId, selectedMonth, selectedYear);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      channel?.close();
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [hasSearched, searchedEmployeeId, selectedMonth, selectedYear]);
+
   // Tự động tìm kiếm nếu đường link có tham số ?id= hoặc ?code= (ví dụ: /?id=NV001)
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -312,13 +360,17 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
     : (rpcResult?.employee || getEmployeeById(searchedEmployeeId));
 
   const attendanceList: AttendanceRecord[] = useMemo(() => {
-    // 1. Nếu có dữ liệu từ Supabase RPC của đúng tháng/năm đang tra cứu
-    if (rpcResult?.attendanceDaily && rpcResult.attendanceDaily.length > 0) {
-      const prefix = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
-      const matched = rpcResult.attendanceDaily.filter((r) => r.date.startsWith(prefix));
-      if (matched.length > 0) return matched;
+    // 1. Nếu có kết quả trả về từ Supabase RPC
+    if (rpcResult) {
+      if (rpcResult.attendanceDaily && rpcResult.attendanceDaily.length > 0) {
+        const prefix = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+        return rpcResult.attendanceDaily.filter((r) => r.date.startsWith(prefix));
+      }
+      // RPC xác nhận kỳ này không có ngày công (đã bị xóa hoặc chưa nạp) -> Không fallback lấy dữ liệu cũ
+      return [];
     }
-    // 2. Tra cứu cục bộ đúng mã nhân viên, tháng và năm
+
+    // 2. Tra cứu cục bộ (chỉ khi offline / chưa kết nối Supabase)
     if (currentEmployee) {
       const records = getAttendanceByEmployee(currentEmployee.id, selectedMonth, selectedYear);
       if (records.length > 0) return records;
@@ -331,15 +383,18 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
   }, [rpcResult, currentEmployee, selectedMonth, selectedYear, getAttendanceByEmployee, getAttendanceMatrix]);
 
   const payrollData: PayrollRecord | undefined =
-    rpcResult?.payrollSummary !== undefined && Number(rpcResult.payrollSummary.month) === Number(selectedMonth) && Number(rpcResult.payrollSummary.year) === Number(selectedYear)
-      ? rpcResult.payrollSummary
+    rpcResult !== null
+      ? (rpcResult?.payrollSummary !== undefined && Number(rpcResult.payrollSummary.month) === Number(selectedMonth) && Number(rpcResult.payrollSummary.year) === Number(selectedYear)
+          ? rpcResult.payrollSummary
+          : undefined)
       : currentEmployee
       ? getPayrollByEmployee(currentEmployee.id, selectedMonth, selectedYear)
       : undefined;
 
   const leaveBalance: LeaveBalance | undefined =
-    rpcResult?.leaveBalance ||
-    (currentEmployee ? getLeaveBalanceByEmployee(currentEmployee.id, selectedYear) : undefined);
+    rpcResult !== null
+      ? rpcResult?.leaveBalance
+      : (currentEmployee ? getLeaveBalanceByEmployee(currentEmployee.id, selectedYear) : undefined);
 
   const employeeLeaveBalanceRecord = currentEmployee
     ? getEmployeeLeaveBalance(currentEmployee.id, selectedMonth, selectedYear)
@@ -376,22 +431,35 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
   // Bảng ma trận 100% chuẩn cấu trúc file Excel mẫu (mẫu(1).xlsx)
   const matrixData = useMemo<EmployeeAttendanceMatrix | null>(() => {
     if (!currentEmployee) return null;
-    // Ưu tiên 1: Lấy ma trận đã lưu trong hệ thống của ĐÚNG selectedMonth và selectedYear
+
+    // 1. Nếu có kết quả trả về từ Supabase RPC:
+    if (rpcResult) {
+      const rpcMat = rpcResult.calculatedSummary?.matrix;
+      if (
+        rpcMat &&
+        isMatrixValidWithData(rpcMat) &&
+        Number(rpcMat.month) === Number(selectedMonth) &&
+        Number(rpcMat.year) === Number(selectedYear)
+      ) {
+        return rpcMat;
+      }
+      if (attendanceList.length > 0 && attendanceList.some((r) => (Number(r.workHours) || 0) > 0 || r.checkIn)) {
+        return buildMatrixFromAttendanceDaily(
+          currentEmployee,
+          attendanceList,
+          selectedMonth,
+          selectedYear
+        );
+      }
+      // RPC xác nhận kỳ này không có chấm công -> Trả về null
+      return null;
+    }
+
+    // 2. Chế độ cục bộ / offline:
     const cached = getAttendanceMatrix(currentEmployee.id, selectedMonth, selectedYear);
     if (cached && isMatrixValidWithData(cached) && Number(cached.month) === Number(selectedMonth) && Number(cached.year) === Number(selectedYear)) {
       return cached;
     }
-    // Ưu tiên 2: Ma trận trả về từ Supabase RPC nếu đúng tháng & năm
-    const rpcMat = rpcResult?.calculatedSummary?.matrix;
-    if (
-      rpcMat &&
-      isMatrixValidWithData(rpcMat) &&
-      Number(rpcMat.month) === Number(selectedMonth) &&
-      Number(rpcMat.year) === Number(selectedYear)
-    ) {
-      return rpcMat;
-    }
-    // Ưu tiên 3: Tái tạo ma trận từ danh sách ngày công chi tiết (chỉ khi có ngày công thực tế của tháng này)
     if (attendanceList.length > 0 && attendanceList.some((r) => (Number(r.workHours) || 0) > 0 || r.checkIn)) {
       return buildMatrixFromAttendanceDaily(
         currentEmployee,

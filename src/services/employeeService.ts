@@ -154,6 +154,16 @@ export const employeeService = {
       } catch (e) {
         console.warn('Lỗi dọn dẹp leave_balances khi xóa NV:', e);
       }
+      try {
+        await supabase.from('employee_leave_balances').delete().in('employee_code', slice);
+      } catch (e) {
+        // Bỏ qua nếu bảng không tồn tại
+      }
+      try {
+        await supabase.from('leave_requests').delete().in('employee_id', slice);
+      } catch (e) {
+        // Bỏ qua nếu bảng không tồn tại
+      }
 
       // 2. Xóa hồ sơ nhân viên trong bảng employees
       const { error } = await supabase.from('employees').delete().in('id', slice);

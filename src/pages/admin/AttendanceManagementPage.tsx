@@ -191,6 +191,7 @@ export const AttendanceManagementPage: React.FC = () => {
   const [deleteMode, setDeleteMode] = useState<
     'single_employee' | 'selected_employees' | 'month' | 'year' | 'period'
   >('selected_employees');
+  const [singleEmpDeleteScope, setSingleEmpDeleteScope] = useState<'month_only' | 'all_data'>('month_only');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string>('');
 
@@ -776,6 +777,7 @@ export const AttendanceManagementPage: React.FC = () => {
   // Xử lý XÓA DỮ LIỆU & XÓA NHÂN VIÊN
   const handleDeleteSingleEmployee = (emp: Employee) => {
     setSingleEmployeeToDelete(emp);
+    setSingleEmpDeleteScope('month_only');
     setDeleteMode('single_employee');
     setIsDeleteModalOpen(true);
   };
@@ -784,15 +786,28 @@ export const AttendanceManagementPage: React.FC = () => {
     setIsDeleting(true);
     try {
       if (deleteMode === 'single_employee' && singleEmployeeToDelete) {
-        await deleteEmployees([singleEmployeeToDelete.id]);
-        setDeleteSuccessMessage(
-          `Đã xóa thành công nhân viên ${singleEmployeeToDelete.fullName} (${singleEmployeeToDelete.id}) cùng toàn bộ dữ liệu chấm công, lương và phép năm khỏi hệ thống!`
-        );
+        if (singleEmpDeleteScope === 'month_only') {
+          await deleteAttendanceByEmployeeMonth([singleEmployeeToDelete.id], selectedMonth, selectedYear);
+          setDeleteSuccessMessage(
+            `Đã xóa thành công dữ liệu chấm công Tháng ${selectedMonth}/${selectedYear} của nhân viên ${singleEmployeeToDelete.fullName} (${singleEmployeeToDelete.id}) khỏi hệ thống!`
+          );
+        } else {
+          await deleteEmployees([singleEmployeeToDelete.id]);
+          setDeleteSuccessMessage(
+            `Đã xóa thành công nhân viên ${singleEmployeeToDelete.fullName} (${singleEmployeeToDelete.id}) cùng toàn bộ dữ liệu chấm công, lương và phép năm khỏi hệ thống!`
+          );
+        }
         setSelectedEmployeeIds((prev) => {
           const next = new Set(prev);
           next.delete(singleEmployeeToDelete.id);
           return next;
         });
+        if (selectedMatrixEmpId === singleEmployeeToDelete.id) {
+          setSelectedMatrixEmpId('');
+        }
+        if (detailEmployee?.id === singleEmployeeToDelete.id) {
+          setDetailEmployee(null);
+        }
         setSingleEmployeeToDelete(null);
       } else if (deleteMode === 'selected_employees') {
         const empIds = Array.from(selectedEmployeeIds);
@@ -801,6 +816,8 @@ export const AttendanceManagementPage: React.FC = () => {
           `Đã xóa thành công ${empIds.length} nhân viên đã chọn cùng toàn bộ dữ liệu chấm công, lương và phép năm khỏi hệ thống!`
         );
         setSelectedEmployeeIds(new Set());
+        setSelectedMatrixEmpId('');
+        setDetailEmployee(null);
       } else if (deleteMode === 'month') {
         await deleteAttendanceByPeriod(deleteTargetMonth, deleteTargetYear);
         setDeleteSuccessMessage(
@@ -824,6 +841,8 @@ export const AttendanceManagementPage: React.FC = () => {
           `Đã xóa thành công toàn bộ ${empIds.length} nhân viên trong Tháng ${selectedMonth}/${selectedYear} cùng dữ liệu liên quan khỏi hệ thống!`
         );
         setSelectedEmployeeIds(new Set());
+        setSelectedMatrixEmpId('');
+        setDetailEmployee(null);
       }
       setIsDeleteModalOpen(false);
     } catch (err: any) {
@@ -1712,14 +1731,14 @@ export const AttendanceManagementPage: React.FC = () => {
         onClose={() => !isDeleting && setIsDeleteModalOpen(false)}
         title={
           deleteMode === 'single_employee'
-            ? 'Xác Nhận Xóa Nhân Viên Khỏi Hệ Thống'
+            ? `Xác Nhận Xóa Dữ Liệu: ${singleEmployeeToDelete?.fullName} (${singleEmployeeToDelete?.id})`
             : deleteMode === 'selected_employees'
             ? `Xác Nhận Xóa ${selectedEmployeeIds.size} Nhân Viên Khỏi Hệ Thống`
             : deleteMode === 'month' || deleteMode === 'period'
             ? `Xác Nhận Xóa Dữ Liệu Chấm Công Tháng ${deleteTargetMonth}/${deleteTargetYear}`
             : `Xác Nhận Xóa Dữ Liệu Chấm Công Cả Năm ${deleteTargetYear}`
         }
-        subtitle="Cảnh báo: Thao tác này sẽ xóa vĩnh viễn dữ liệu được chọn khỏi hệ thống"
+        subtitle="Cảnh báo: Dữ liệu xóa sẽ lập tức được đồng bộ và cập nhật sang trang tra cứu"
         size="md"
       >
         <div className="space-y-4 text-xs text-slate-700">
@@ -1728,7 +1747,7 @@ export const AttendanceManagementPage: React.FC = () => {
             <div>
               <div className="font-bold text-rose-950 text-sm mb-1">
                 {deleteMode === 'single_employee'
-                  ? `Xóa nhân viên ${singleEmployeeToDelete?.fullName} (${singleEmployeeToDelete?.id})`
+                  ? `Xóa dữ liệu đối với nhân viên ${singleEmployeeToDelete?.fullName} (${singleEmployeeToDelete?.id})`
                   : deleteMode === 'selected_employees'
                   ? `Xóa ${selectedEmployeeIds.size} nhân viên đã chọn khỏi hệ thống`
                   : deleteMode === 'month' || deleteMode === 'period'
@@ -1737,7 +1756,9 @@ export const AttendanceManagementPage: React.FC = () => {
               </div>
               <p className="text-rose-800 leading-relaxed">
                 {deleteMode === 'single_employee'
-                  ? `CẢNH BÁO: Thao tác này sẽ XÓA VĨNH VIỄN nhân viên ${singleEmployeeToDelete?.fullName} (Mã NV: ${singleEmployeeToDelete?.id}) khỏi hệ thống, đồng thời xóa toàn bộ dữ liệu chấm công, bảng lương và phép năm liên quan. Thao tác không thể hoàn tác!`
+                  ? (singleEmpDeleteScope === 'month_only'
+                      ? `Hệ thống sẽ xóa toàn bộ dữ liệu bảng công chi tiết và điểm danh Tháng ${selectedMonth}/${selectedYear} của nhân viên ${singleEmployeeToDelete?.fullName}. Hồ sơ nhân viên và dữ liệu các tháng khác vẫn được bảo lưu.`
+                      : `CẢNH BÁO NGUY HIỂM: Thao tác này sẽ XÓA VĨNH VIỄN nhân viên ${singleEmployeeToDelete?.fullName} (Mã NV: ${singleEmployeeToDelete?.id}) khỏi hệ thống, cùng toàn bộ lịch sử chấm công tất cả các kỳ, bảng lương và phép năm. Thao tác không thể hoàn tác!`)
                   : deleteMode === 'selected_employees'
                   ? `CẢNH BÁO: Thao tác này sẽ XÓA TOÀN BỘ ${selectedEmployeeIds.size} nhân viên đã chọn khỏi hệ thống, cùng toàn bộ lịch sử chấm công, bảng lương và phép năm của các nhân viên này. Thao tác không thể hoàn tác!`
                   : deleteMode === 'month' || deleteMode === 'period'
@@ -1746,6 +1767,53 @@ export const AttendanceManagementPage: React.FC = () => {
               </p>
             </div>
           </div>
+
+          {/* Tùy chọn phạm vi xóa cho 1 nhân viên */}
+          {deleteMode === 'single_employee' && singleEmployeeToDelete && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <span className="block text-[11px] font-bold text-slate-700">
+                Chọn phương thức xóa:
+              </span>
+              <div className="space-y-1.5">
+                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition">
+                  <input
+                    type="radio"
+                    name="singleEmpDeleteScope"
+                    value="month_only"
+                    checked={singleEmpDeleteScope === 'month_only'}
+                    onChange={() => setSingleEmpDeleteScope('month_only')}
+                    className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      1. Chỉ xóa dữ liệu chấm công Tháng {selectedMonth}/{selectedYear}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block">
+                      Xóa bảng công và các ngày công trong kỳ này. Dữ liệu tra cứu kỳ này sẽ lập tức báo không có dữ liệu.
+                    </span>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-50 cursor-pointer transition">
+                  <input
+                    type="radio"
+                    name="singleEmpDeleteScope"
+                    value="all_data"
+                    checked={singleEmpDeleteScope === 'all_data'}
+                    onChange={() => setSingleEmpDeleteScope('all_data')}
+                    className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-rose-800 block">
+                      2. Xóa vĩnh viễn nhân viên và TOÀN BỘ dữ liệu khỏi hệ thống
+                    </span>
+                    <span className="text-[10px] text-rose-600 block">
+                      Xóa toàn bộ hồ sơ, chấm công tất cả các tháng, lương và phép năm. Tra cứu sẽ báo không tìm thấy nhân viên.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* Bộ chọn tháng / năm trực tiếp trong modal xóa */}
           {deleteMode === 'month' && (
