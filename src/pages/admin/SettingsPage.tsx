@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, Building, Clock, DollarSign, Calendar, Save, CheckCircle2 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { Card } from '../../components/common/Card';
@@ -8,6 +8,11 @@ export const SettingsPage: React.FC = () => {
 
   const [formState, setFormState] = useState(settings);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Đồng bộ formState khi settings trong context cập nhật hoặc nạp từ storage
+  useEffect(() => {
+    setFormState(settings);
+  }, [settings]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

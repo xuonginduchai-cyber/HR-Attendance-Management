@@ -628,4 +628,47 @@ export const importService = {
       })),
     }));
   },
+
+  /**
+   * Xóa danh sách bản ghi lịch sử import theo ID
+   */
+  async deleteImportLogs(ids: string[]): Promise<void> {
+    if (!isSupabaseConfigured || ids.length === 0) return;
+
+    try {
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const { error } = await supabase.from('attendance_imports').delete().in('id', chunk);
+        if (error) {
+          console.error('Lỗi khi xóa lịch sử import từ Supabase:', error);
+          throw error;
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi xóa lịch sử import:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * Xóa toàn bộ lịch sử import
+   */
+  async deleteAllImportLogs(): Promise<void> {
+    if (!isSupabaseConfigured) return;
+
+    try {
+      const { error } = await supabase
+        .from('attendance_imports')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (error) {
+        console.error('Lỗi khi xóa toàn bộ lịch sử import từ Supabase:', error);
+        throw error;
+      }
+    } catch (err) {
+      console.error('Lỗi xóa toàn bộ lịch sử import:', err);
+      throw err;
+    }
+  },
 };

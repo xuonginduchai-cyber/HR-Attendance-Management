@@ -59,6 +59,8 @@ interface DataContextType {
   approveLeaveRequest: (id: string, note?: string) => void;
   rejectLeaveRequest: (id: string, note?: string) => void;
   addImportLog: (log: Omit<ImportLog, 'id' | 'importedAt'> & { file?: File }) => Promise<void>;
+  deleteImportLogs: (ids: string[]) => Promise<void>;
+  deleteAllImportLogs: () => Promise<void>;
   importAttendanceData: (params: {
     month: number;
     year: number;
@@ -254,8 +256,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
   });
 
-  const [importLogs, setImportLogs] = useState<ImportLog[]>(initialImportLogs);
-  const [settings, setSettings] = useState<SystemSettings>(initialSettings);
+  const [importLogs, setImportLogs] = useState<ImportLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('hr_import_logs') ?? sessionStorage.getItem('hr_import_logs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return initialImportLogs;
+  });
+
+  const [settings, setSettings] = useState<SystemSettings>(() => {
+    try {
+      const saved = localStorage.getItem('hr_settings') ?? sessionStorage.getItem('hr_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return { ...initialSettings, ...parsed };
+        }
+      }
+    } catch {}
+    return initialSettings;
+  });
   const [importedMatrices, setImportedMatrices] = useState<Record<string, EmployeeAttendanceMatrix>>(() => {
     try {
       const saved = localStorage.getItem('hr_imported_matrices') || sessionStorage.getItem('hr_imported_matrices');
@@ -567,6 +590,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const importsPromise = importService.getImportLogs().then((dbImports) => {
         if (dbImports && dbImports.length > 0) {
           setImportLogs(dbImports);
+          saveToStorage('hr_import_logs', dbImports);
         }
         return dbImports;
       }).catch((e) => {
@@ -1180,7 +1204,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           filePath,
           fileSize,
         });
-        setImportLogs(prev => [savedLog, ...prev]);
+        setImportLogs(prev => {
+          const list = [savedLog, ...prev];
+          saveToStorage('hr_import_logs', list);
+          return list;
+        });
         await auditService.logAction('IMPORT_EXCEL', 'attendance_imports', savedLog.id, {
           fileName: logData.fileName,
           totalRows: logData.totalRows,
@@ -1205,7 +1233,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: `IMP-${Date.now()}`,
       importedAt: formattedDate,
     };
-    setImportLogs(prev => [newLog, ...prev]);
+    setImportLogs(prev => {
+      const list = [newLog, ...prev];
+      saveToStorage('hr_import_logs', list);
+      return list;
+    });
+  };
+
+  const deleteImportLogs = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setImportLogs((prev) => {
+      const remaining = prev.filter((log) => !idSet.has(log.id));
+      saveToStorage('hr_import_logs', remaining);
+      return remaining;
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        await importService.deleteImportLogs(ids);
+      } catch (err) {
+        console.error('Lỗi khi xóa lịch sử import từ Supabase:', err);
+      }
+    }
+  };
+
+  const deleteAllImportLogs = async () => {
+    setImportLogs([]);
+    saveToStorage('hr_import_logs', []);
+
+    if (isSupabaseConfigured) {
+      try {
+        await importService.deleteAllImportLogs();
+      } catch (err) {
+        console.error('Lỗi khi xóa toàn bộ lịch sử import từ Supabase:', err);
+      }
+    }
   };
 
   const importAttendanceData = async (params: {
@@ -1833,7 +1896,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateSettings = (newSettings: Partial<SystemSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      saveToStorage('hr_settings', updated);
+      return updated;
+    });
   };
 
   const getLeaveBalanceByEmployee = (empId: string, year = 2026) => {
@@ -1880,6 +1947,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         approveLeaveRequest,
         rejectLeaveRequest,
         addImportLog,
+        deleteImportLogs,
+        deleteAllImportLogs,
         importAttendanceData,
         importPayrollData,
         deletePayrollRecords,
