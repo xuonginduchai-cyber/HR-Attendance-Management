@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Building2, Lock, User, Eye, EyeOff, ArrowRight, ShieldCheck, Sparkles, Database } from 'lucide-react';
+import { Building2, Lock, User, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { isSupabaseConfigured } from '../../lib/supabase';
 
 export const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('admin');
@@ -33,12 +32,6 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const fillQuickCredentials = () => {
-    setUsername('admin');
-    setPassword('admin123');
-    setError('');
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
       {/* Background Decorative Rings */}
@@ -57,28 +50,6 @@ export const LoginPage: React.FC = () => {
             <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">
               Hệ Thống Quản Lý Chấm Công & Nhân Sự
             </p>
-
-            {isSupabaseConfigured && (
-              <span className="inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <Database className="w-3 h-3 text-emerald-600" />
-                <span>Supabase Auth & Database Live</span>
-              </span>
-            )}
-          </div>
-
-          {/* Quick Demo Info Pill */}
-          <div className="mb-6 p-3 rounded-xl bg-indigo-50/80 border border-indigo-100 flex items-center justify-between text-xs text-indigo-900">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-              <span>Tài khoản thử nghiệm: <strong>admin</strong> / <strong>admin123</strong></span>
-            </div>
-            <button
-              type="button"
-              onClick={fillQuickCredentials}
-              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline flex-shrink-0"
-            >
-              Tự điền
-            </button>
           </div>
 
           {error && (
@@ -181,10 +152,13 @@ export const LoginPage: React.FC = () => {
             <span>Dành Cho Nhân Viên: Tra Cứu Công & Lương</span>
           </Link>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-1">
             <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
               Phiên bản 2.0 &bull; Supabase PostgreSQL Protected
+            </p>
+            <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+              Phiên bản 2.0 &bull; Power by IT CoAsia
             </p>
           </div>
         </div>
