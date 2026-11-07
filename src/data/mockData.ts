@@ -1,11 +1,11 @@
 import { Employee, AttendanceRecord, PayrollRecord, LeaveRequest, LeaveBalance, ImportLog, SystemSettings, AdminUser } from '../types';
 
 export const mockAdmin: AdminUser = {
-  id: 'ADM001',
-  username: 'admin',
-  fullName: 'Nguyễn Quản Trị (HR Manager)',
+  id: '45d45f1f-9ba2-493a-aa15-a4bc1f5b8d49',
+  username: 'ngocmai_vina',
+  fullName: 'Ngô Thị Ngọc Mai',
   role: 'super_admin',
-  email: 'hr.admin@congtyviet.com',
+  email: 'ngocmai_vina@coasia.com',
   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
 };
 

@@ -86,11 +86,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Nếu người dùng nhập username thay vì email, tra cứu email trong bảng admin_profiles
         if (!email.includes('@')) {
+          const cleanUser = email.toLowerCase();
           const { data: profile } = await supabase
             .from('admin_profiles')
             .select('email')
-            .eq('username', email)
-            .single();
+            .or(`username.ilike.${cleanUser},username.ilike.${cleanUser}_vina,email.ilike.${cleanUser}@%`)
+            .limit(1)
+            .maybeSingle();
 
           if (profile?.email) {
             email = profile.email;
