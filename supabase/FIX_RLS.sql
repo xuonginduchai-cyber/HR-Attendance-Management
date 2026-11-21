@@ -211,9 +211,9 @@ CREATE POLICY "Allow public on employee_leave_balances" ON public.employee_leave
 -- 7. Cấp quyền Quản trị viên (Admin) cho tài khoản: [EMAIL_ADDRESS]
 INSERT INTO public.admin_profiles (id, username, full_name, role, email, avatar_url)
 VALUES (
-    '45d45f1f-9ba2-493a-aa15-a4bc1f5b8d49',
-    'ngocmai_vina',
-    'Nguyễn Thị Ngọc Mai',
+    '00167918-78f7-447a-925b-d9e551c573e7',
+    'quocdung_vina',
+    'Nguyễn Quốc Dũng',
     'super_admin',
     'ngocmai_vina@coasia.com',
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'

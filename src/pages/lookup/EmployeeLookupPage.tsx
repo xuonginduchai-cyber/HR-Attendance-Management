@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   Download,
   AlertTriangle,
-  UserCheck,
   CreditCard,
   Briefcase,
   Layers,
@@ -872,16 +871,9 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
       <div className="no-print bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white py-8 sm:py-12 px-4 shadow-inner">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 mb-2">
-              <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Cổng tra cứu tự phục vụ người lao động</span>
-            </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              Tra Cứu Thông Tin Nhân Sự Cá Nhân
+              HỆ THỐNG TRA CỨU COASIA
             </h2>
-            <p className="text-xs sm:text-sm text-indigo-200/80 mt-1 max-w-lg mx-auto">
-              Tra cứu bảng chấm công theo ngày, phiếu lương bảo mật mã PIN và số dư phép năm minh bạch
-            </p>
           </div>
 
           {/* Search Box Card */}
