@@ -1571,11 +1571,11 @@ export const exportStandardTemplateExcel = (
     employees.length > 0
       ? employees.slice(0, 4)
       : [
-          { id: 'S0076', fullName: 'Bùi Quang Tùng', department: 'Utility Part', startDate: '2018-12-24' },
-          { id: 'NV001', fullName: 'Trần Văn An', department: 'Phòng Kỹ thuật', startDate: '2022-03-15' },
-          { id: 'NV002', fullName: 'Lê Thị Bích', department: 'Phòng Nhân sự', startDate: '2021-08-01' },
-          { id: 'NV003', fullName: 'Phạm Minh Cường', department: 'Phòng Kỹ thuật', startDate: '2023-01-10' },
-        ];
+        { id: 'S0076', fullName: 'Bùi Quang Tùng', department: 'Utility Part', startDate: '2018-12-24' },
+        { id: 'NV001', fullName: 'Trần Văn An', department: 'Phòng Kỹ thuật', startDate: '2022-03-15' },
+        { id: 'NV002', fullName: 'Lê Thị Bích', department: 'Phòng Nhân sự', startDate: '2021-08-01' },
+        { id: 'NV003', fullName: 'Phạm Minh Cường', department: 'Phòng Kỹ thuật', startDate: '2023-01-10' },
+      ];
 
   const daysInMonth = new Date(year, month, 0).getDate();
 
@@ -1802,12 +1802,12 @@ export const exportCompact1RowTemplateExcel = (
     employees.length > 0
       ? employees.slice(0, 5)
       : [
-          { id: 'S0076', fullName: 'Bùi Quang Tùng', department: 'Utility Part', startDate: '2018-12-24' },
-          { id: 'S/M0044', fullName: 'Bùi Văn Hưng', department: 'Utility Part', startDate: '2019-05-10' },
-          { id: 'S0098', fullName: 'Dương Quang Thắng', department: 'Utility Part', startDate: '2020-03-15' },
-          { id: 'S0059', fullName: 'Dương Thành Trung', department: 'Utility Part', startDate: '2021-08-20' },
-          { id: 'NV001', fullName: 'Trần Văn An', department: 'Phòng Kỹ thuật', startDate: '2022-03-15' },
-        ];
+        { id: 'S0076', fullName: 'Bùi Quang Tùng', department: 'Utility Part', startDate: '2018-12-24' },
+        { id: 'S/M0044', fullName: 'Bùi Văn Hưng', department: 'Utility Part', startDate: '2019-05-10' },
+        { id: 'S0098', fullName: 'Dương Quang Thắng', department: 'Utility Part', startDate: '2020-03-15' },
+        { id: 'S0059', fullName: 'Dương Thành Trung', department: 'Utility Part', startDate: '2021-08-20' },
+        { id: 'NV001', fullName: 'Trần Văn An', department: 'Phòng Kỹ thuật', startDate: '2022-03-15' },
+      ];
 
   const daysInMonth = new Date(year, month, 0).getDate();
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -2287,10 +2287,10 @@ export const parseLeaveRows = (
 
     // KIỂM TRA CÔNG THỨC SỐ DƯ PHÉP
     const expectedRemainingDays = Math.round((carriedOverDays + allocatedDays + adjustedDays - usedDays) * 100) / 100;
-    
+
     // Đọc số còn lại từ file
     let remainingDays = remainingIdx >= 0 ? parseNumber(row[remainingIdx], expectedRemainingDays) : expectedRemainingDays;
-    
+
     let hasFormulaMismatch = false;
     let formulaNote: string | undefined = undefined;
 
@@ -2338,10 +2338,10 @@ export const downloadPayrollTemplate = (month: number, year: number, employees?:
     employees && employees.length > 0
       ? employees.slice(0, 5)
       : [
-          { id: 'NV001', fullName: 'Trần Văn An', baseSalary: 28000000, allowance: 2500000 },
-          { id: 'NV002', fullName: 'Lê Thị Bích', baseSalary: 18000000, allowance: 1500000 },
-          { id: 'NV003', fullName: 'Phạm Minh Cường', baseSalary: 22000000, allowance: 1800000 },
-        ];
+        { id: 'NV001', fullName: 'Trần Văn An', baseSalary: 28000000, allowance: 2500000 },
+        { id: 'NV002', fullName: 'Lê Thị Bích', baseSalary: 18000000, allowance: 1500000 },
+        { id: 'NV003', fullName: 'Phạm Minh Cường', baseSalary: 22000000, allowance: 1800000 },
+      ];
 
   const sampleRows = sampleEmps.map((emp) => ({
     'Mã nhân viên': emp.id,
@@ -2396,10 +2396,10 @@ export const downloadLeaveTemplate = (year: number, employees?: Employee[]) => {
     employees && employees.length > 0
       ? employees.slice(0, 5)
       : [
-          { id: 'NV001', fullName: 'Trần Văn An' },
-          { id: 'NV002', fullName: 'Lê Thị Bích' },
-          { id: 'NV003', fullName: 'Phạm Minh Cường' },
-        ];
+        { id: 'NV001', fullName: 'Trần Văn An' },
+        { id: 'NV002', fullName: 'Lê Thị Bích' },
+        { id: 'NV003', fullName: 'Phạm Minh Cường' },
+      ];
 
   const sampleRows = sampleEmps.map((emp, idx) => {
     const carried = idx === 0 ? 2 : idx === 1 ? 3 : 0;
@@ -2515,12 +2515,12 @@ export const exportLeaveBalanceTemplateExcel = (
     employees && employees.length > 0
       ? employees.slice(0, 10)
       : [
-          { id: 'S0076', fullName: 'Bùi Quang Tùng', department: 'Utility Part' },
-          { id: 'S/M0044', fullName: 'Bùi Văn Hưng', department: 'Utility Part' },
-          { id: 'S0098', fullName: 'Dương Quang Thắng', department: 'Utility Part' },
-          { id: 'S0059', fullName: 'Dương Thành Trung', department: 'Utility Part' },
-          { id: 'NV001', fullName: 'Trần Văn An', department: 'Phòng Kỹ thuật' },
-        ];
+        { id: 'S0076', fullName: 'Bùi Quang Tùng', department: 'Utility Part' },
+        { id: 'S/M0044', fullName: 'Bùi Văn Hưng', department: 'Utility Part' },
+        { id: 'S0098', fullName: 'Dương Quang Thắng', department: 'Utility Part' },
+        { id: 'S0059', fullName: 'Dương Thành Trung', department: 'Utility Part' },
+        { id: 'NV001', fullName: 'Trần Văn An', department: 'Phòng Kỹ thuật' },
+      ];
 
   const sampleRows = sampleEmps.map((emp, idx) => {
     const carried = idx === 0 ? 2 : idx === 1 ? 1.5 : idx === 2 ? 0 : idx === 3 ? 3 : 2.5;
