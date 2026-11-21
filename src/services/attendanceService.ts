@@ -116,7 +116,8 @@ export const attendanceService = {
         .from('attendance_daily')
         .select('*')
         .range(from, from + pageSize - 1)
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .order('employee_id', { ascending: true });
 
       if (error) {
         console.error('Lỗi khi tải chấm công từ Supabase:', error);
@@ -152,7 +153,8 @@ export const attendanceService = {
         .gte('date', startDate)
         .lte('date', endDate)
         .range(from, from + pageSize - 1)
-        .order('date', { ascending: true });
+        .order('date', { ascending: true })
+        .order('employee_id', { ascending: true });
 
       if (error) {
         console.error('Lỗi khi tải chấm công theo tháng từ Supabase:', error);

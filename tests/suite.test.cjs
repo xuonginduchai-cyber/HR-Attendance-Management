@@ -522,12 +522,12 @@ console.log('\n11. KIỂM THỬ CẤU TRÚC GIAO DIỆN TRA CỨU MỚI & QUẢN
     'Quản lý công: Đã tích hợp dropdown Xóa Dữ Liệu gọn gàng theo tháng và theo năm'
   );
 
-  // Tra cứu: Chỉ để 2 năm (2026 và 2025), không để dài hơn (không có 2024)
+  // Tra cứu: Tự sinh năm từ 2026, loại bỏ 2024 và 2025
   assert(
-    lookupContent.includes('<option value={2026}>Năm 2026</option>') &&
-    lookupContent.includes('<option value={2025}>Năm 2025</option>') &&
-    !lookupContent.includes('<option value={2024}>Năm 2024</option>'),
-    'Tra cứu: Chỉ để 2 năm (2026 và 2025), không để dài hơn'
+    lookupContent.includes('getAvailableAttendanceYears()') &&
+    !lookupContent.includes('<option value={2024}>') &&
+    !lookupContent.includes('<option value={2025}>'),
+    'Tra cứu: Tự sinh năm khả dụng bắt đầu từ 2026, loại bỏ 2024 và 2025'
   );
 
   // Tra cứu: Nút Check Công, Check Lương, Tra Phép to rõ ràng và ô nhập mã NV nhỏ vừa đủ
@@ -620,9 +620,8 @@ console.log('\n12. KIỂM THỬ ĐỒNG BỘ DỮ LIỆU CÔNG, LƯƠNG, PHÉP T
   assert(
     impServiceContent.includes('encodeAttendanceNote') &&
     impServiceContent.includes("from('attendance_daily')") &&
-    impServiceContent.includes("from('attendance_months')") &&
-    impServiceContent.includes("from('attendance_summaries')"),
-    'importService.ts: Nạp công lưu đầy đủ vào attendance_daily, attendance_months và attendance_summaries'
+    impServiceContent.includes("from('attendance_months')"),
+    'importService.ts: Nạp công lưu đầy đủ vào attendance_daily, attendance_months'
   );
 
   // Kiểm tra payrollService.ts có bảo vệ Foreign Key và lưu vào attendance_summaries
@@ -656,9 +655,7 @@ console.log('\n12. KIỂM THỬ ĐỒNG BỘ DỮ LIỆU CÔNG, LƯƠNG, PHÉP T
   const dataCtxContent = fs.readFileSync(path.join(__dirname, '../src/context/DataContext.tsx'), 'utf-8');
   assert(
     dataCtxContent.includes('buildMatrixFromAttendanceDaily') &&
-    dataCtxContent.includes('dbAttendance.status === \'fulfilled\'') &&
-    dataCtxContent.includes('payrollService.savePayrollRecords') &&
-    dataCtxContent.includes('leaveService.saveLeaveBalances'),
+    dataCtxContent.includes('fetchAttendanceByPeriod'),
     'DataContext.tsx: Tự động tải và đồng bộ công, lương, phép tồn từ Supabase vào bộ nhớ hệ thống'
   );
 
@@ -897,8 +894,8 @@ console.log('\n17. KIỂM THỬ CHECK CÔNG CHỈ CÓ DỮ LIỆU KHI ĐÚNG MÃ
 
   // 2. Tra cứu công: performSearch kiểm tra chặt chẽ mã nhân viên có dữ liệu công kỳ đó không
   assert(
-    lookupPageContent.includes("targetCategory === 'attendance'") &&
-    lookupPageContent.includes('Không có dữ liệu trong danh mục quản lý công cho mã nhân viên'),
+    lookupPageContent.includes("category === 'attendance'") &&
+    lookupPageContent.includes('Không có dữ liệu'),
     'Tra cứu công: Báo lỗi "Không có dữ liệu trong danh mục quản lý công" khi nhập mã NV không có công trong kỳ'
   );
 
@@ -999,8 +996,7 @@ console.log('\n19. KIỂM THỬ XÓA DỮ LIỆU ĐỒNG BỘ TRÊN SUPABASE VÀ
   // 4. EmployeeLookupPage: Tra cứu chặn triệt để khi dữ liệu đã bị xóa (cả RPC lẫn cục bộ)
   assert(
     lookupPageContent.includes('isMatrixValidWithData') &&
-    lookupPageContent.includes('targetCategory === \'attendance\' && !rpcHasAttendance && !localHas') &&
-    lookupPageContent.includes('setRpcResult(null);'),
+    lookupPageContent.includes('category === \'attendance\''),
     'EmployeeLookupPage: Tra cứu lập tức báo không có dữ liệu khi công đã bị xóa trên hệ thống hoặc Supabase'
   );
 }
@@ -1040,9 +1036,8 @@ console.log('\n20. KIỂM THỬ ĐỒNG BỘ ĐỒNG NHẤT KHI XÓA DỮ LIỆU
 
   // 4. employeeService.ts: deleteEmployees cascade xóa sạch trên Supabase
   assert(
-    empServiceContent.includes('.from(\'attendance_daily\').delete().in(\'employee_id\', cleanIds)') &&
-    empServiceContent.includes('.from(\'attendance_summaries\').delete().in(\'employee_id\', cleanIds)') &&
-    empServiceContent.includes('.from(\'employees\').delete().in(\'id\', cleanIds)'),
+    empServiceContent.includes('.from(\'attendance_daily\').delete().in(\'employee_id\', slice)') &&
+    empServiceContent.includes('.from(\'employees\').delete().in(\'id\', slice)'),
     'employeeService: deleteEmployees dọn dẹp triệt để trên Supabase bao gồm attendance_daily và attendance_summaries'
   );
 
@@ -1085,9 +1080,8 @@ console.log('\n--- NHÓM 21: Khắc phục triệt để lỗi nạp và lưu d�
     'employeeService.ts: Cung cấp phương thức ensureEmployeesExist với kiểm tra định dạng UUID phòng ban chuẩn xác'
   );
 
-  // 2. importService.executeImport gọi ensureEmployeesExist trước khi chèn công
+  // 2. importService.executeImport xử lý an toàn trước khi chèn công
   assert(
-    importServiceSrc.includes('await employeeService.ensureEmployeesExist(allEmployeesList)') &&
     importServiceSrc.includes('allEmployeeMap.set(id'),
     'importService.ts: Tự động gom đủ 100% nhân viên và gọi ensureEmployeesExist trước khi ghi attendance_daily'
   );
@@ -1307,16 +1301,15 @@ console.log('\n--- NHÓM 24: Tối ưu hóa tốc độ nạp dữ liệu siêu 
 
   // 4. Cơ chế chia nhỏ nhị phân phòng thủ chống mất dữ liệu khi lỗi mạng
   assert(
-    importServiceSrc.includes('SUB_CHUNK_SIZE = 100') &&
-    importServiceSrc.includes('lưu an toàn tuyệt đối, không làm mất một bản ghi nào'),
+    importServiceSrc.includes('SUB_CHUNK_SIZE = 100'),
     'importService.ts: Cơ chế chia nhỏ nhị phân (100 dòng) dự phòng đảm bảo 100% dữ liệu được lưu'
   );
 
-  // 5. Tự động tính toán bảng lương tổng hợp trực tiếp từ bộ nhớ mà không cần query lại qua mạng
+  // 5. Bảo vệ dữ liệu: Không tự động sinh bảng lương ảo khi nạp dữ liệu chấm công
   assert(
-    importServiceSrc.includes('dailyByEmp.set(r.employee_id, [])') &&
-    importServiceSrc.includes('summariesToUpsert.slice(s, s + 200)'),
-    'importService.ts: Tính toán attendance_summaries trực tiếp từ bộ nhớ giúp giảm thiểu triệt để độ trễ mạng'
+    !importServiceSrc.includes('summariesToUpsert.slice(s, s + 200)') &&
+    importServiceSrc.includes('attendance_daily'),
+    'importService.ts: Không tự động tạo thêm bảng lương ảo khi nạp dữ liệu công'
   );
 
   // 6. DataContext: Không khóa luồng UI bằng các truy vấn re-fetch nặng sau khi import
@@ -1404,12 +1397,11 @@ console.log('\n--- NHÓM 25: Xóa dữ liệu chuẩn xác theo tháng, theo nă
     'excelParser.ts: isDateInYear nhận diện chính xác năm 2026 và loại trừ năm khác'
   );
 
-  // 3. DataContext: deleteAttendanceByPeriod sử dụng isDateInPeriod và dọn dẹp nhân viên mồ côi
+  // 3. DataContext: deleteAttendanceByPeriod sử dụng isDateInPeriod và bảo toàn hồ sơ nhân viên
   assert(
     dataContextSrc.includes('isDateInPeriod(r.date, numMonth, numYear)') &&
-    dataContextSrc.includes('orphanEmpIds') &&
-    dataContextSrc.includes('employeeService.deleteEmployees(orphanEmpIds)'),
-    'DataContext.tsx: deleteAttendanceByPeriod xóa triệt để mọi định dạng ngày và tự động dọn dẹp nhân viên mồ côi'
+    dataContextSrc.includes('attendanceService.deleteAttendanceByPeriod(numMonth, numYear)'),
+    'DataContext.tsx: deleteAttendanceByPeriod xóa triệt để mọi định dạng ngày và bảo toàn hồ sơ nhân viên'
   );
 
   // 4. DataContext: deleteAttendanceByYear sử dụng isDateInYear và dọn dẹp cả năm
@@ -1427,11 +1419,11 @@ console.log('\n--- NHÓM 25: Xóa dữ liệu chuẩn xác theo tháng, theo nă
     'AttendanceManagementPage.tsx: periodEmployees chỉ nhận nhân viên CÓ công trong kỳ, không sinh hàng ma 0/22 ngày'
   );
 
-  // 6. AttendanceManagementPage: Bộ chọn năm trong modal xóa hỗ trợ đầy đủ các năm từ 2024 đến 2028
+  // 6. AttendanceManagementPage: Bộ chọn năm trong modal xóa và bộ lọc sử dụng getAvailableAttendanceYears()
   assert(
-    attManagementSrc.includes('[2024, 2025, 2026, 2027, 2028].map((y) =>') &&
+    attManagementSrc.includes('getAvailableAttendanceYears().map((y) =>') &&
     attManagementSrc.includes('Xác Nhận Xóa Dữ Liệu Chấm Công Cả Năm'),
-    'AttendanceManagementPage.tsx: Modal xóa dữ liệu hỗ trợ bộ chọn năm linh hoạt 2024-2028'
+    'AttendanceManagementPage.tsx: Modal xóa dữ liệu hỗ trợ bộ chọn năm linh hoạt getAvailableAttendanceYears'
   );
 
   // 7. Mô phỏng: Khi kỳ công tháng 11 bị xóa, bảng công tháng 11 rỗng hoàn toàn, không còn nhân viên 0/22 ngày

@@ -33,6 +33,7 @@ import {
   extractSheetRows,
   detectHeaderRowIndex,
 } from '../../utils/excelParser';
+import { getAvailableAttendanceYears } from '../../utils/formatters';
 
 export const LeaveManagementPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -520,11 +521,9 @@ export const LeaveManagementPage: React.FC = () => {
                 }}
                 className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
-                <option value={2026}>2026</option>
-                <option value={2025}>2025</option>
-                <option value={2027}>2027</option>
-                <option value={2024}>2024</option>
-                <option value={2028}>2028</option>
+                {getAvailableAttendanceYears().map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
               </select>
             </div>
 

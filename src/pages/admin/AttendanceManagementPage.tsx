@@ -33,6 +33,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { attendanceService } from '../../services/attendanceService';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import {
   AttendanceRecord,
   AttendanceStatus,
@@ -60,6 +61,7 @@ import {
   isDateInPeriod,
   isDateInYear,
 } from '../../utils/excelParser';
+import { getAvailableAttendanceYears } from '../../utils/formatters';
 
 export const AttendanceManagementPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -75,6 +77,7 @@ export const AttendanceManagementPage: React.FC = () => {
     deleteAttendanceByPeriod,
     deleteAttendanceByYear,
     importAttendanceData,
+    fetchAttendanceByPeriod,
     getAttendanceMatrix,
     getEmployeeById,
     getPayrollByEmployee,
@@ -114,8 +117,13 @@ export const AttendanceManagementPage: React.FC = () => {
     return 2026;
   });
 
-  // Tự động nhận diện kỳ có dữ liệu từ importedMatrices hoặc attendanceRecords nếu chưa có trong URL
+  const hasInitializedPeriod = useRef(false);
+
+  // Tự động nhận diện kỳ có dữ liệu từ importedMatrices hoặc attendanceRecords nếu chưa có trong URL (chỉ chạy 1 lần khi mount)
   useEffect(() => {
+    if (hasInitializedPeriod.current) return;
+    hasInitializedPeriod.current = true;
+
     if (!paramMonth) {
       try {
         const saved = localStorage.getItem('hr_last_imported_period');
@@ -172,6 +180,23 @@ export const AttendanceManagementPage: React.FC = () => {
       }
     }
   }, [importedMatrices, attendanceRecords, payrollRecords, paramMonth]);
+
+  // Luôn đảm bảo nạp dữ liệu chấm công đúng kỳ đã chọn từ Supabase
+  const [isLoadingPeriodData, setIsLoadingPeriodData] = useState(false);
+  useEffect(() => {
+    let isMounted = true;
+    if (isSupabaseConfigured) {
+      setIsLoadingPeriodData(true);
+      fetchAttendanceByPeriod(selectedMonth, selectedYear)
+        .catch((err) => console.warn('Lỗi tải dữ liệu kỳ:', err))
+        .finally(() => {
+          if (isMounted) setIsLoadingPeriodData(false);
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedMonth, selectedYear, fetchAttendanceByPeriod]);
 
   // Filters nhật ký ngày
   const [selectedDate, setSelectedDate] = useState('2026-11-04');
@@ -1208,7 +1233,7 @@ export const AttendanceManagementPage: React.FC = () => {
                 }}
                 className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium text-slate-700"
               >
-                {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                {getAvailableAttendanceYears().map((y) => (
                   <option key={y} value={y}>
                     Năm {y}
                   </option>
@@ -1841,7 +1866,7 @@ export const AttendanceManagementPage: React.FC = () => {
                     onChange={(e) => setDeleteTargetYear(Number(e.target.value))}
                     className="py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold"
                   >
-                    {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                    {getAvailableAttendanceYears().map((y) => (
                       <option key={y} value={y}>Năm {y}</option>
                     ))}
                   </select>
@@ -1861,7 +1886,7 @@ export const AttendanceManagementPage: React.FC = () => {
                   onChange={(e) => setDeleteTargetYear(Number(e.target.value))}
                   className="w-full py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold"
                 >
-                  {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                  {getAvailableAttendanceYears().map((y) => (
                     <option key={y} value={y}>Năm {y}</option>
                   ))}
                 </select>
@@ -1968,7 +1993,7 @@ export const AttendanceManagementPage: React.FC = () => {
                   onChange={(e) => setImportYear(parseInt(e.target.value, 10))}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:text-slate-500"
                 >
-                  {[2024, 2025, 2026, 2027].map((y) => (
+                  {getAvailableAttendanceYears().map((y) => (
                     <option key={y} value={y}>
                       Năm {y}
                     </option>

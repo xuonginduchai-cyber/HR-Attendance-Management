@@ -33,7 +33,7 @@ import { Card } from '../../components/common/Card';
 import { StatCard } from '../../components/common/StatCard';
 import { PaymentStatusBadge } from '../../components/common/Badge';
 import { Modal } from '../../components/common/Modal';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, getAvailableAttendanceYears } from '../../utils/formatters';
 import {
   readExcelWorkbook,
   extractSheetRows,
@@ -437,9 +437,9 @@ export const PayrollPage: React.FC = () => {
               onChange={(e) => setSelectedYear(Number(e.target.value))}
               className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer"
             >
-              <option value={2026}>2026</option>
-              <option value={2025}>2025</option>
-              <option value={2024}>2024</option>
+              {getAvailableAttendanceYears().map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
             </select>
           </div>
 
@@ -990,7 +990,7 @@ export const PayrollPage: React.FC = () => {
                     onChange={(e) => setDeleteTargetYear(Number(e.target.value))}
                     className="py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold outline-none cursor-pointer"
                   >
-                    {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                    {getAvailableAttendanceYears().map((y) => (
                       <option key={y} value={y}>Năm {y}</option>
                     ))}
                   </select>
@@ -1010,7 +1010,7 @@ export const PayrollPage: React.FC = () => {
                   onChange={(e) => setDeleteTargetYear(Number(e.target.value))}
                   className="w-full py-1.5 px-3 text-xs border border-slate-300 rounded-lg bg-white font-bold outline-none cursor-pointer"
                 >
-                  {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                  {getAvailableAttendanceYears().map((y) => (
                     <option key={y} value={y}>Năm {y}</option>
                   ))}
                 </select>

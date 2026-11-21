@@ -41,7 +41,7 @@ import { Card } from '../../components/common/Card';
 import { Modal } from '../../components/common/Modal';
 import { AttendanceBadge, LeaveRequestBadge, PaymentStatusBadge } from '../../components/common/Badge';
 import { AttendanceMatrixTable } from '../../components/attendance/AttendanceMatrixTable';
-import { formatCurrency, formatDate, getDayOfWeek, getAttendanceStatusLabel } from '../../utils/formatters';
+import { formatCurrency, formatDate, getDayOfWeek, getAttendanceStatusLabel, getAvailableAttendanceYears } from '../../utils/formatters';
 import { lookupService, lookupSecurity, LookupResult, CalculatedAttendanceSummary } from '../../services/lookupService';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { Employee, AttendanceRecord, PayrollRecord, LeaveBalance, EmployeeAttendanceMatrix } from '../../types';
@@ -1016,8 +1016,9 @@ export const EmployeeLookupPage: React.FC<EmployeeLookupPageProps> = ({ initialC
                       }}
                       className="w-28 py-2.5 px-3 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 font-bold"
                     >
-                      <option value={2026}>Năm 2026</option>
-                      <option value={2025}>Năm 2025</option>
+                      {getAvailableAttendanceYears().map((y) => (
+                        <option key={y} value={y}>Năm {y}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

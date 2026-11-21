@@ -72,3 +72,20 @@ export const getAttendanceStatusLabel = (status: string): string => {
   }
 };
 
+/**
+ * Danh sách các năm khả dụng cho dữ liệu chấm công:
+ * Bắt đầu từ 2026 (đã loại bỏ 2024 và 2025 theo yêu cầu).
+ * Tự động sinh năm tiếp theo khi hết năm (ví dụ: trong năm 2026 có 2026, 2027; khi sang 2027 tự có thêm 2028...).
+ */
+export const getAvailableAttendanceYears = (): number[] => {
+  const START_YEAR = 2026;
+  const currentYear = new Date().getFullYear();
+  const maxYear = Math.max(START_YEAR + 1, currentYear + 1);
+  const years: number[] = [];
+  for (let y = START_YEAR; y <= maxYear; y++) {
+    years.push(y);
+  }
+  return years;
+};
+
+

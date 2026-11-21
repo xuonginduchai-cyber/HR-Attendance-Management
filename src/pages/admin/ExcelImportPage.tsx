@@ -29,6 +29,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Modal } from '../../components/common/Modal';
 import { isSupabaseConfigured } from '../../lib/supabase';
+import { getAvailableAttendanceYears } from '../../utils/formatters';
 import {
   readExcelWorkbook,
   extractSheetRows,
@@ -569,7 +570,7 @@ export const ExcelImportPage: React.FC = () => {
                 }
                 className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {[2024, 2025, 2026, 2027].map((y) => (
+                {getAvailableAttendanceYears().map((y) => (
                   <option key={y} value={y}>
                     Năm {y}
                   </option>

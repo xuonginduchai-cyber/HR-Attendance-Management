@@ -109,6 +109,7 @@ interface DataContextType {
   getEmployeeById: (id: string) => Employee | undefined;
   getLeaveBalanceByEmployee: (empId: string, year?: number) => LeaveBalance | undefined;
   getAttendanceByEmployee: (empId: string, month?: number, year?: number) => AttendanceRecord[];
+  fetchAttendanceByPeriod: (month: number, year: number) => Promise<AttendanceRecord[]>;
   getAttendanceMatrix: (empId: string, month?: number, year?: number) => EmployeeAttendanceMatrix | undefined;
   getAvailablePeriodsForEmployee: (empId: string) => Array<{ month: number; year: number }>;
   getPayrollByEmployee: (empId: string, month?: number, year?: number) => PayrollRecord | undefined;
@@ -465,6 +466,65 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return [];
     },
     [attendanceRecords, importedMatrices]
+  );
+
+  const fetchAttendanceByPeriod = useCallback(
+    async (month: number, year: number): Promise<AttendanceRecord[]> => {
+      if (!isSupabaseConfigured) {
+        const prefix = `${year}-${String(month).padStart(2, '0')}`;
+        return attendanceRecords.filter((r) => r.date && r.date.startsWith(prefix));
+      }
+
+      try {
+        const records = await attendanceService.getAttendanceByMonth(month, year);
+        if (records && records.length > 0) {
+          setAttendanceRecords((prev) => {
+            const prefix = `${year}-${String(month).padStart(2, '0')}`;
+            const others = prev.filter((r) => !r.date || !r.date.startsWith(prefix));
+            const next = [...others, ...records];
+            return next;
+          });
+
+          // Tự động xây dựng lại ma trận cho kỳ này
+          const empMap = new Map(employees.map((e) => [e.id.trim().toUpperCase(), e]));
+          const groups = new Map<string, AttendanceRecord[]>();
+          records.forEach((r) => {
+            const empId = r.employeeId.trim().toUpperCase();
+            if (!groups.has(empId)) groups.set(empId, []);
+            groups.get(empId)!.push(r);
+          });
+
+          setImportedMatrices((prev) => {
+            const next = { ...prev };
+            groups.forEach((empRecords, empId) => {
+              const emp = empMap.get(empId) || {
+                id: empId,
+                fullName: `Nhân viên ${empId}`,
+                department: 'Phòng Kỹ thuật' as any,
+                position: 'Nhân viên',
+                startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+                status: 'active' as const,
+                baseSalary: 12000000,
+                allowance: 1500000,
+                email: `${empId.toLowerCase()}@congtyviet.com`,
+                phone: '',
+              };
+              const key = `${empId}_${month}_${year}`;
+              next[key] = buildMatrixFromAttendanceDaily(emp, empRecords, month, year);
+            });
+            return next;
+          });
+
+          notifyDataChanged('FETCH_PERIOD_ATTENDANCE');
+        }
+        return records;
+      } catch (err) {
+        console.warn(`Lỗi tải dữ liệu chấm công Tháng ${month}/${year}:`, err);
+        const prefix = `${year}-${String(month).padStart(2, '0')}`;
+        return attendanceRecords.filter((r) => r.date && r.date.startsWith(prefix));
+      }
+    },
+    [employees, attendanceRecords]
   );
 
   const getAttendanceMatrix = useCallback(
@@ -1459,9 +1519,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       });
 
+      // Luôn lưu kỳ công gần nhất trước tiên một cách độc lập
       try {
-        localStorage.setItem('hr_imported_matrices', JSON.stringify(next));
-        sessionStorage.setItem('hr_imported_matrices', JSON.stringify(next));
         localStorage.setItem(
           'hr_last_imported_period',
           JSON.stringify({
@@ -1470,6 +1529,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             employeeId: distinctEmpIds[0] || params.matrices?.[0]?.employeeId,
           })
         );
+      } catch (e) {
+        console.warn('Không thể lưu kỳ công gần nhất:', e);
+      }
+
+      try {
+        sessionStorage.setItem('hr_imported_matrices', JSON.stringify(next));
       } catch (e) {
         console.warn('Không thể lưu matrices vào storage:', e);
       }
@@ -2005,6 +2070,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getEmployeeById,
         getLeaveBalanceByEmployee,
         getAttendanceByEmployee,
+        fetchAttendanceByPeriod,
         getAttendanceMatrix,
         getAvailablePeriodsForEmployee,
         getPayrollByEmployee,
