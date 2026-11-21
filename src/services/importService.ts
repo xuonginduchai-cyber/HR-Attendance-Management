@@ -189,32 +189,40 @@ export const importService = {
     let syncCreatedIds: string[] = [];
     let syncUpdatedIds: string[] = [];
     const syncErrors: string[] = [];
+    const existingIdSet = new Set<string>();
 
     if (isSupabaseConfigured) {
       try {
-        // Đảm bảo 100% nhân viên tồn tại trong bảng employees trên Supabase trước khi chèn công (ngăn chặn triệt để lỗi FK)
-        const ensureRes = await employeeService.ensureEmployeesExist(allEmployeesList);
-        if (ensureRes.errors.length > 0) {
-          syncErrors.push(...ensureRes.errors);
+        // KHÔNG TỰ ĐỘNG THÊM NHÂN VIÊN MỚI: Chỉ lấy danh sách nhân viên đã có sẵn trong bảng employees
+        const allEmpIds = allEmployeesList.map((e) => e.id);
+        for (let i = 0; i < allEmpIds.length; i += 100) {
+          const slice = allEmpIds.slice(i, i + 100);
+          const { data: dbEmps, error: checkErr } = await supabase
+            .from('employees')
+            .select('id')
+            .in('id', slice);
+
+          if (checkErr) {
+            console.warn('Lỗi kiểm tra nhân viên tồn tại:', checkErr);
+          }
+          (dbEmps || []).forEach((e: any) => existingIdSet.add(e.id.trim().toUpperCase()));
         }
 
-        // Cập nhật thông tin cho các nhân viên có thay đổi họ tên, phòng ban
+        // Cập nhật thông tin cho các nhân viên đã có sẵn nếu có thay đổi họ tên, phòng ban
         if (toUpdate.length > 0) {
-          const syncRes = await employeeService.batchSyncEmployees({ toCreate: [], toUpdate });
-          syncUpdatedIds = syncRes.updated;
-          if (syncRes.errors.length > 0) {
-            syncErrors.push(...syncRes.errors);
+          const validUpdates = toUpdate.filter((u) => existingIdSet.has(u.id.trim().toUpperCase()));
+          if (validUpdates.length > 0) {
+            const syncRes = await employeeService.batchSyncEmployees({ toCreate: [], toUpdate: validUpdates });
+            syncUpdatedIds = syncRes.updated;
+            if (syncRes.errors.length > 0) {
+              syncErrors.push(...syncRes.errors);
+            }
           }
         }
-        syncCreatedIds = ensureRes.created;
       } catch (empSyncErr: any) {
-        console.error('Lỗi nghiêm trọng khi đồng bộ nhân viên:', empSyncErr);
-        throw new Error(
-          `Không thể đồng bộ hồ sơ nhân viên trước khi lưu chấm công: ${empSyncErr.message}`
-        );
+        console.warn('Lỗi kiểm tra nhân viên:', empSyncErr);
       }
     } else {
-      syncCreatedIds = toCreate.map((e) => e.id);
       syncUpdatedIds = toUpdate.map((e) => e.id);
     }
 
@@ -321,7 +329,10 @@ export const importService = {
           deduplicatedDailyMap.set(recordKey, record);
         });
 
-        const dailyRecords = Array.from(deduplicatedDailyMap.values());
+        // Chỉ lưu dữ liệu chấm công cho các nhân viên đã có sẵn trong hệ thống (KHÔNG tự động thêm nhân viên mới)
+        const dailyRecords = Array.from(deduplicatedDailyMap.values()).filter((r) =>
+          !isSupabaseConfigured || existingIdSet.size === 0 || existingIdSet.has(r.employee_id)
+        );
 
         // Ghi dữ liệu chấm công theo các lô lớn (500 bản ghi) chạy song song (concurrency: 3)
         const CHUNK_SIZE = 500;
@@ -398,69 +409,6 @@ export const importService = {
           }
         } catch {}
 
-        // Tự động tính toán và cập nhật attendance_summaries trực tiếp từ bộ nhớ (không cần query lại qua mạng)
-        try {
-          const distinctEmpIds = Array.from(new Set(dailyRecords.map((r) => r.employee_id)));
-          const dailyByEmp = new Map<string, any[]>();
-          dailyRecords.forEach((r) => {
-            if (!dailyByEmp.has(r.employee_id)) dailyByEmp.set(r.employee_id, []);
-            dailyByEmp.get(r.employee_id)!.push(r);
-          });
-
-          // Lấy lương từ danh sách hồ sơ nhân viên đã đồng bộ
-          const summariesToUpsert = distinctEmpIds.map((empId) => {
-            const empDaily = dailyByEmp.get(empId) || [];
-            const empMeta = allEmployeeMap.get(empId);
-
-            const actualWorkDays = empDaily.filter((d: any) => Number(d.work_hours) > 0).length;
-            const lateDays = empDaily.filter((d: any) => d.status === 'late').length;
-            const latePenalty = lateDays * 50000;
-
-            const baseSalary = 12000000;
-            const allowance = 1500000;
-            const standardWorkDays = 22;
-
-            const dailyRate = baseSalary / standardWorkDays;
-            const earnedSalary = Math.round(dailyRate * Math.min(actualWorkDays, standardWorkDays));
-            const insurance = Math.round(baseSalary * 0.105);
-            const netSalary = Math.max(0, earnedSalary + allowance - latePenalty - insurance);
-
-            return {
-              employee_id: empId,
-              month,
-              year,
-              standard_work_days: standardWorkDays,
-              actual_work_days: actualWorkDays,
-              paid_leave_days: 0,
-              unpaid_leave_days: Math.max(0, standardWorkDays - actualWorkDays),
-              base_salary: baseSalary,
-              allowance,
-              bonus: 0,
-              overtime_pay: 0,
-              late_penalty: latePenalty,
-              insurance_deduction: insurance,
-              tax_deduction: 0,
-              net_salary: netSalary,
-              payment_status: 'draft',
-              updated_at: new Date().toISOString(),
-            };
-          });
-
-          // Ghi summaries theo lô 200 bản ghi
-          for (let s = 0; s < summariesToUpsert.length; s += 200) {
-            const sumChunk = summariesToUpsert.slice(s, s + 200);
-            try {
-              const { error: sumErr } = await supabase
-                .from('attendance_summaries')
-                .upsert(sumChunk, { onConflict: 'employee_id,month,year' });
-              if (sumErr) {
-                console.warn('Lỗi ghi summaries vào Supabase:', sumErr);
-              }
-            } catch {}
-          }
-        } catch (sumErr) {
-          console.warn('Lỗi tính bảng lương tổng hợp:', sumErr);
-        }
       } catch (err: any) {
         console.error('Lỗi khi ghi dữ liệu chấm công:', err);
         throw new Error(err.message || 'Lỗi hệ thống khi lưu dữ liệu vào Supabase');

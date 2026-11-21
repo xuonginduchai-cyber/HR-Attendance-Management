@@ -2094,8 +2094,8 @@ export const AttendanceManagementPage: React.FC = () => {
                     ✓ {parseResult.attendanceRows.filter((r) => r.isValid).length} bản ghi hợp lệ
                   </span>
                   {parseResult.employeesSyncList.filter((e) => e.action === 'create').length > 0 && (
-                    <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg font-bold text-[11px]">
-                      + {parseResult.employeesSyncList.filter((e) => e.action === 'create').length} nhân viên mới
+                    <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-medium text-[11px]">
+                      {parseResult.employeesSyncList.filter((e) => e.action === 'create').length} mã NV chưa có (bỏ qua)
                     </span>
                   )}
                   {parseResult.attendanceRows.filter((r) => !r.isValid).length > 0 && (

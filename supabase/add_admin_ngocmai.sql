@@ -26,3 +26,4 @@ CREATE POLICY "Allow public on admin_profiles" ON public.admin_profiles
 
 -- 3. Kiểm tra kết quả
 SELECT * FROM public.admin_profiles WHERE id = '45d45f1f-9ba2-493a-aa15-a4bc1f5b8d49';
+

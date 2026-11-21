@@ -360,45 +360,6 @@ export const ExcelImportPage: React.FC = () => {
     }
   };
 
-  // Dùng file test mẫu nhanh
-  const handleUseSampleTestFile = async (type: 'valid' | 'new_emps' | 'matrix' | 'sample1' | 'errors') => {
-    let sampleFileName = 'Bang_Cham_Cong_Hop_Le_Thang_11_2026.xlsx';
-    let fileTargetMonth = 11;
-    if (type === 'sample1') {
-      sampleFileName = 'mẫu(1).xlsx';
-      fileTargetMonth = 10;
-    } else if (type === 'new_emps') {
-      sampleFileName = 'Bang_Cham_Cong_Co_Nhan_Vien_Moi.xlsx';
-      fileTargetMonth = 11;
-    } else if (type === 'matrix') {
-      sampleFileName = 'Cong_T10_Mau_Chuan_63_Cot.xlsx';
-      fileTargetMonth = 10;
-    } else if (type === 'errors') {
-      sampleFileName = 'Bang_Cham_Cong_Co_Loi_Kiem_Thu.xlsx';
-      fileTargetMonth = 11;
-    }
-
-    setTargetMonth(fileTargetMonth);
-
-    try {
-      setIsReadingFile(true);
-      const res = await fetch(`/templates/${sampleFileName}`);
-      if (!res.ok) {
-        throw new Error('Chưa tìm thấy file mẫu trên server');
-      }
-      const blob = await res.blob();
-      const file = new File([blob], sampleFileName, {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      await handleProcessFile(file);
-    } catch (err: any) {
-      console.warn('Lỗi tải file mẫu:', err);
-      alert('Đang tải file mẫu... Vui lòng thử lại sau vài giây!');
-    } finally {
-      setIsReadingFile(false);
-    }
-  };
-
   // Thống kê nhân viên
   const totalEmployeesRecognized = employeesSyncList.length;
   const newEmployeesToCreate = useMemo(
@@ -529,7 +490,7 @@ export const ExcelImportPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-800">
-              Nhập File Excel Chấm Công & Tự Động Tạo Nhân Viên
+              Nhập File Excel Chấm Công
             </h2>
             {isSupabaseConfigured && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -539,7 +500,7 @@ export const ExcelImportPage: React.FC = () => {
             )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Tự động nhận diện mã nhân viên, tạo hồ sơ nhân viên mới, cập nhật thông tin và lưu công an toàn vào Supabase
+            Nhập dữ liệu chấm công từ file Excel, đối chiếu danh bạ nhân viên và lưu dữ liệu an toàn vào Supabase
           </p>
         </div>
 
@@ -688,7 +649,7 @@ export const ExcelImportPage: React.FC = () => {
             Kéo thả file Excel chấm công (.xlsx, .xls, .csv) vào đây
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-xl mx-auto">
-            Hỗ trợ cả file danh sách theo dòng và file ma trận nhóm 9 dòng trích xuất từ máy chấm công (như file Công t10.xls). Tự động tạo hồ sơ nhân viên mới nếu mã chưa có trên hệ thống.
+            Hỗ trợ cả file danh sách theo dòng và file ma trận nhóm 9 dòng trích xuất từ máy chấm công (như file Công t10.xls). Chỉ lưu công cho nhân viên đã có trên hệ thống, không tự động thêm dữ liệu.
           </p>
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
@@ -702,45 +663,6 @@ export const ExcelImportPage: React.FC = () => {
                 className="hidden"
               />
             </label>
-
-            {/* Nút test file chuẩn mẫu(1).xlsx */}
-            <button
-              onClick={() => handleUseSampleTestFile('sample1')}
-              className="px-3.5 py-2 bg-indigo-50 border border-indigo-300 hover:bg-indigo-100 text-indigo-800 rounded-lg text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5"
-              title="Thử nghiệm nạp file mẫu chuẩn mẫu(1).xlsx với nhân viên S0076 (Bùi Quang Tùng - Utility Part)"
-            >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>Thử File Chuẩn mẫu(1).xlsx (S0076)</span>
-            </button>
-
-            {/* Nút test file có nhân viên mới */}
-            <button
-              onClick={() => handleUseSampleTestFile('new_emps')}
-              className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5"
-              title="Thử nghiệm tạo nhân viên mới (NV009, NV010) và cập nhật NV cũ"
-            >
-              <UserPlus className="w-4 h-4 text-emerald-600" />
-              <span>Thử File Có NV Mới (Auto-create)</span>
-            </button>
-
-            {/* Nút test file ma trận kiểu Công T10 */}
-            <button
-              onClick={() => handleUseSampleTestFile('matrix')}
-              className="px-3.5 py-2 bg-purple-50 border border-purple-200 hover:bg-purple-100 text-purple-800 rounded-lg text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5"
-              title="Thử nghiệm cấu trúc ma trận 31 ngày nhóm 9 dòng như file Công T10"
-            >
-              <Layers className="w-4 h-4 text-purple-600" />
-              <span>Thử File Kiểu Công T10 (31 ngày)</span>
-            </button>
-
-            {/* Nút test file có lỗi */}
-            <button
-              onClick={() => handleUseSampleTestFile('errors')}
-              className="px-3.5 py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold shadow-sm transition inline-flex items-center gap-1.5"
-            >
-              <AlertCircle className="w-4 h-4 text-rose-600" />
-              <span>Thử File Có Lỗi (Test Case)</span>
-            </button>
           </div>
 
           {fileName && (
@@ -783,16 +705,16 @@ export const ExcelImportPage: React.FC = () => {
               <span className="text-[11px] text-slate-400 block mt-0.5">nhận diện từ file</span>
             </div>
 
-            <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200 text-xs shadow-xs">
-              <div className="flex items-center gap-2 text-emerald-800 font-semibold mb-1">
-                <UserPlus className="w-4 h-4 text-emerald-600" />
-                <span>Nhân viên mới sẽ tạo</span>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs shadow-xs">
+              <div className="flex items-center gap-2 text-slate-700 font-semibold mb-1">
+                <Users className="w-4 h-4 text-slate-500" />
+                <span>Mã NV chưa có trong hệ thống</span>
               </div>
-              <span className="text-2xl font-black text-emerald-700">
+              <span className="text-2xl font-black text-slate-700">
                 {newEmployeesToCreate.length}
               </span>
-              <span className="text-[11px] text-emerald-600 block mt-0.5">
-                tự động lưu vào bảng employees
+              <span className="text-[11px] text-slate-500 block mt-0.5">
+                bỏ qua (không tự động thêm NV)
               </span>
             </div>
 
@@ -1227,9 +1149,9 @@ export const ExcelImportPage: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Nhân viên mới sẽ tự động tạo hồ sơ:</span>
-              <span className="font-bold text-purple-700">
-                {newEmployeesToCreate.length} nhân viên
+              <span className="text-slate-500">Mã NV chưa có trong hệ thống:</span>
+              <span className="font-bold text-slate-600">
+                {newEmployeesToCreate.length} nhân viên (bỏ qua, không tự động thêm)
               </span>
             </div>
             <div className="flex justify-between">
@@ -1380,8 +1302,7 @@ export const ExcelImportPage: React.FC = () => {
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    Đã tạo thành công <strong>{postImportReport.newEmployeesCreatedCount}</strong> hồ
-                    sơ nhân viên mới vào cơ sở dữ liệu.
+                    Không tự động tạo thêm nhân viên mới ngoài danh bạ (bảo đảm an toàn dữ liệu).
                   </li>
                   <li>
                     Đã cập nhật thông tin cho <strong>{postImportReport.updatedEmployeesCount}</strong>{' '}

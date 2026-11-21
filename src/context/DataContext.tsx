@@ -1377,71 +1377,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     employeesSyncList: EmployeeSyncRecord[];
     matrices?: EmployeeAttendanceMatrix[];
   }): Promise<ImportExecutionResult> => {
-    // 1. Tự động thêm hoặc cập nhật nhân viên vào state (đảm bảo tra cứu ra 100%)
-    const newEmpsToCreate: Employee[] = [];
-    params.employeesSyncList
-      .filter((e) => e.action === 'create')
-      .forEach((c) => {
-        newEmpsToCreate.push({
-          id: c.id.trim().toUpperCase(),
-          fullName: c.fullName,
-          email: `${c.id.toLowerCase().replace(/[^a-z0-9]/g, '')}@congtyviet.com`,
-          phone: '',
-          department: (c.department as any) || 'Phòng Kỹ thuật',
-          position: c.position || 'Nhân viên',
-          startDate: c.startDate || `${params.year}-${String(params.month).padStart(2, '0')}-01`,
-          status: 'active',
-          baseSalary: 12000000,
-          allowance: 1500000,
-        });
-      });
-
-    if (params.matrices) {
-      params.matrices.forEach((mat) => {
-        const matId = mat.employeeId.trim().toUpperCase();
-        if (!newEmpsToCreate.some((e) => e.id === matId)) {
-          newEmpsToCreate.push({
-            id: matId,
-            fullName: mat.fullName,
-            email: `${matId.toLowerCase().replace(/[^a-z0-9]/g, '')}@congtyviet.com`,
-            phone: '',
-            department: (mat.department as any) || 'Phòng Kỹ thuật',
-            position: 'Nhân viên',
-            startDate: mat.startDate || `${params.year}-${String(params.month).padStart(2, '0')}-01`,
-            status: 'active',
-            baseSalary: 12000000,
-            allowance: 1500000,
-          });
-        }
-      });
-    }
-
-    params.validRows.forEach((r) => {
-      const rId = r.employeeId.trim().toUpperCase();
-      if (!newEmpsToCreate.some((e) => e.id === rId)) {
-        newEmpsToCreate.push({
-          id: rId,
-          fullName: r.fullName || rId,
-          email: `${rId.toLowerCase().replace(/[^a-z0-9]/g, '')}@congtyviet.com`,
-          phone: '',
-          department: (r.department as any) || 'Phòng Kỹ thuật',
-          position: 'Nhân viên',
-          startDate: r.startDate || `${params.year}-${String(params.month).padStart(2, '0')}-01`,
-          status: 'active',
-          baseSalary: 12000000,
-          allowance: 1500000,
-        });
-      }
-    });
-
+    // 1. Chỉ cập nhật thông tin nhân viên đã có sẵn nếu có thay đổi (KHÔNG tự động thêm nhân viên mới)
     setEmployees((prev) => {
-      const existingIds = new Set(prev.map((e) => e.id.trim().toUpperCase()));
-      const toAdd = newEmpsToCreate.filter((e) => !existingIds.has(e.id));
       const updateMap = new Map(
         params.employeesSyncList
           .filter((e) => e.action === 'update')
           .map((u) => [u.id.trim().toUpperCase(), u])
       );
+      if (updateMap.size === 0) return prev;
       const updatedPrev = prev.map((emp) => {
         const upd = updateMap.get(emp.id.trim().toUpperCase());
         if (upd) {
@@ -1454,9 +1397,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return emp;
       });
-      const finalEmployees = [...toAdd, ...updatedPrev];
-      saveToStorage('hr_employees', finalEmployees);
-      return finalEmployees;
+      saveToStorage('hr_employees', updatedPrev);
+      return updatedPrev;
     });
 
     // 2. Cập nhật dữ liệu chấm công chi tiết bảo toàn 100% trường dữ liệu
@@ -1510,20 +1452,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const key = `${empId}_${Number(params.month)}_${Number(params.year)}`;
         if (!next[key]) {
           const empRows = newAttendance.filter((a) => a.employeeId === empId);
-          const empMeta = newEmpsToCreate.find((e) => e.id === empId) ||
-            employees.find((e) => e.id === empId) || {
-              id: empId,
-              fullName: `Nhân viên ${empId}`,
-              department: 'Phòng Kỹ thuật' as const,
-              position: 'Nhân viên',
-              startDate: `${params.year}-${String(params.month).padStart(2, '0')}-01`,
-              status: 'active' as const,
-              baseSalary: 12000000,
-              allowance: 1500000,
-              email: `${empId.toLowerCase()}@congtyviet.com`,
-              phone: '',
-            };
-          next[key] = buildMatrixFromAttendanceDaily(empMeta, empRows, Number(params.month), Number(params.year));
+          const empMeta = employees.find((e) => e.id.trim().toUpperCase() === empId);
+          if (empMeta) {
+            next[key] = buildMatrixFromAttendanceDaily(empMeta, empRows, Number(params.month), Number(params.year));
+          }
         }
       });
 

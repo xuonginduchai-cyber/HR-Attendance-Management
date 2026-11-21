@@ -327,7 +327,7 @@ export const parseCompactDayCell = (
 
   // Chữ 'X' hoặc 'x': Ký hiệu chuẩn ngày làm việc đủ 8h trong bảng công Việt Nam
   if (str.toUpperCase() === 'X') {
-    return { workHours: 8, checkIn: '08:00', checkOut: '17:30', leaveCode: null, otHours: 0 };
+    return { workHours: 8, checkIn: null, checkOut: null, leaveCode: null, otHours: 0 };
   }
 
   // 1. Dạng số giờ làm việc: 8, 8.5, 4, 8h, 7,5
@@ -338,8 +338,8 @@ export const parseCompactDayCell = (
       const ot = hours > 8 ? Math.round((hours - 8) * 10) / 10 : 0;
       return {
         workHours: Math.min(hours, 24),
-        checkIn: '08:00',
-        checkOut: formatTimeAfterHours('08:00', hours),
+        checkIn: null,
+        checkOut: null,
         leaveCode: null,
         otHours: ot,
       };
@@ -372,8 +372,8 @@ export const parseCompactDayCell = (
     const otH = parseFloat(comboMatch[2].replace(',', '.'));
     return {
       workHours: baseH,
-      checkIn: '08:00',
-      checkOut: formatTimeAfterHours('08:00', baseH + otH),
+      checkIn: null,
+      checkOut: null,
       leaveCode: null,
       otHours: otH,
     };
@@ -774,7 +774,7 @@ export const parseAndValidateRows = (
               status,
               lateMinutes: 0,
               earlyMinutes: 0,
-              note: parsed.leaveCode ? (parsed.leaveCode === 'P' ? 'Nghỉ phép (P)' : `Nghỉ: ${parsed.leaveCode}`) : (parsed.otHours > 0 ? `Tăng ca (+${parsed.otHours}h OT)` : 'Chấm công tự động'),
+              note: parsed.leaveCode ? (parsed.leaveCode === 'P' ? 'Nghỉ phép (P)' : `Nghỉ: ${parsed.leaveCode}`) : (parsed.otHours > 0 ? `Tăng ca (+${parsed.otHours}h OT)` : ''),
               isValid: true,
               isNewEmployee: empRec.action === 'create',
               errors: [],
@@ -1079,7 +1079,7 @@ export const parseAndValidateRows = (
           } else if (otHours > 0) {
             note = `Tăng ca (+${otHours}h OT)`;
           } else {
-            note = 'Chấm công tự động';
+            note = '';
           }
 
           parsedAttendanceRows.push({
@@ -1307,7 +1307,7 @@ export const parseAndValidateRows = (
         date,
         checkIn,
         checkOut: checkOut || '',
-        note: note || (status === 'late' ? `Đi muộn ${lateMinutes} phút` : 'Chấm công tự động'),
+        note: note || (status === 'late' ? `Đi muộn ${lateMinutes} phút` : ''),
         status,
         workHours,
         lateMinutes,
@@ -1769,9 +1769,9 @@ export const exportStandardTemplateExcel = (
     ['  8. TC ngày Chủ nhật (200%)', 'Số giờ làm thêm vào ngày Chủ nhật. Cột TỔNG = Tổng giờ tăng ca 200%.'],
     ['  9. TC đêm Chủ nhật (270%)', 'Số giờ làm thêm ban đêm vào ngày Chủ nhật. Cột TỔNG = Tổng giờ tăng ca 270%.'],
     [],
-    ['III. QUY TẮC BẢO VỆ DỮ LIỆU & TỰ ĐỘNG TẠO NHÂN VIÊN'],
+    ['III. QUY TẮC BẢO VỆ DỮ LIỆU CHẤM CÔNG'],
     ['1. Bảo toàn mã NV:', 'Mã nhân viên luôn được lưu dạng chuỗi và giữ nguyên số 0 ở đầu (ví dụ: S0076, NV001, 00123).'],
-    ['2. Tự động tạo hồ sơ:', 'Nếu mã nhân viên chưa có trong hệ thống, hệ thống sẽ tự động tạo mới với đầy đủ Họ tên, Ngày vào làm, Bộ phận.'],
+    ['2. Nhân viên hợp lệ:', 'Hệ thống chỉ lưu công cho các nhân viên đã có mã trong danh bạ hệ thống, không tự động tạo thêm dữ liệu.'],
     ['3. Tự động đồng bộ:', 'Nếu mã đã có, hệ thống cập nhật thông tin nếu có sự thay đổi mà không làm mất dữ liệu lịch sử.'],
     ['4. Bắt buộc chọn kỳ công:', 'Admin phải chọn Tháng và Năm kỳ công trước khi tải file Excel lên hệ thống.']
   ];
